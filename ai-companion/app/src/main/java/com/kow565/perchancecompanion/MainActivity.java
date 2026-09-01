@@ -1,7 +1,9 @@
 package com.kow565.perchancecompanion;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.Dialog;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -11,7 +13,6 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -20,9 +21,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
-
-import android.app.Activity;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -36,6 +34,7 @@ public class MainActivity extends Activity {
     private ScrollView chatScroll;
     private EditText input;
     private TextView title;
+    private TextView headerAvatar;
     private volatile boolean busy = false;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -51,6 +50,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        store = new CompanionStore(this);
         if (chatContainer != null) renderAll();
     }
 
@@ -65,8 +65,8 @@ public class MainActivity extends Activity {
         header.setPadding(dp(14), dp(10), dp(8), dp(10));
         header.setBackgroundColor(Color.WHITE);
 
-        TextView avatar = avatarView("하", 42);
-        header.addView(avatar);
+        headerAvatar = avatarView(avatarLetter(), 42);
+        header.addView(headerAvatar);
 
         LinearLayout nameBox = new LinearLayout(this);
         nameBox.setOrientation(LinearLayout.VERTICAL);
@@ -83,6 +83,11 @@ public class MainActivity extends Activity {
         nameBox.addView(title);
         nameBox.addView(active);
         header.addView(nameBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        Button studio = tinyButton("✦");
+        studio.setContentDescription("이미지 및 캐릭터 스튜디오");
+        studio.setOnClickListener(v -> startActivity(new Intent(this, StudioActivity.class)));
+        header.addView(studio);
 
         Button settings = tinyButton("⚙");
         settings.setOnClickListener(v -> showSettings());
@@ -136,6 +141,7 @@ public class MainActivity extends Activity {
 
     private void renderAll() {
         title.setText(store.aiName());
+        if (headerAvatar != null) headerAvatar.setText(avatarLetter());
         renderStories();
         renderMessages();
     }
@@ -155,7 +161,7 @@ public class MainActivity extends Activity {
         ringBg.setStroke(dp(stories.length() > 0 ? 3 : 1), stories.length() > 0 ? Color.rgb(225,45,115) : Color.LTGRAY);
         ring.setBackground(ringBg);
         ring.setPadding(dp(4), dp(4), dp(4), dp(4));
-        ring.addView(avatarView("하", 54), new FrameLayout.LayoutParams(dp(54), dp(54), Gravity.CENTER));
+        ring.addView(avatarView(avatarLetter(), 54), new FrameLayout.LayoutParams(dp(54), dp(54), Gravity.CENTER));
         item.addView(ring, new LinearLayout.LayoutParams(dp(64), dp(64)));
         TextView label = new TextView(this);
         label.setText(store.aiName());
@@ -326,28 +332,81 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(22), dp(20), dp(22), dp(18));
         TextView h = new TextView(this);
-        h.setText("프로필 설정"); h.setTextSize(20); h.setTypeface(Typeface.DEFAULT_BOLD); h.setTextColor(Color.BLACK);
+        h.setText("프로필 · 앱 설정");
+        h.setTextSize(20);
+        h.setTypeface(Typeface.DEFAULT_BOLD);
+        h.setTextColor(Color.BLACK);
         box.addView(h);
-        EditText ai = new EditText(this); ai.setHint("AI 이름"); ai.setText(store.aiName()); box.addView(ai);
-        EditText user = new EditText(this); user.setHint("나를 부를 이름"); user.setText(store.userName()); box.addView(user);
+
+        EditText ai = new EditText(this);
+        ai.setHint("AI 이름");
+        ai.setText(store.aiName());
+        box.addView(ai);
+        EditText user = new EditText(this);
+        user.setHint("나를 부를 이름");
+        user.setText(store.userName());
+        box.addView(user);
+
         TextView note = new TextView(this);
-        note.setText("선톡은 약 1~4시간 간격, 스토리는 약 5~14시간 간격으로 자동 생성됩니다. 새벽 1~8시는 쉬는 시간으로 둡니다.");
-        note.setTextSize(12); note.setTextColor(Color.GRAY); note.setPadding(0, dp(8), 0, dp(10)); box.addView(note);
-        Button save = new Button(this); save.setText("저장");
-        save.setOnClickListener(v -> { store.setNames(ai.getText().toString(), user.getText().toString()); d.dismiss(); renderAll(); });
+        note.setText(store.runtimeConfigSummary());
+        note.setTextSize(12);
+        note.setTextColor(Color.GRAY);
+        note.setPadding(0, dp(8), 0, dp(10));
+        box.addView(note);
+
+        Button save = new Button(this);
+        save.setText("이름 저장");
+        save.setOnClickListener(v -> {
+            store.setNames(ai.getText().toString(), user.getText().toString());
+            d.dismiss();
+            renderAll();
+        });
         box.addView(save);
-        Button clear = new Button(this); clear.setText("대화/스토리 초기화");
-        clear.setOnClickListener(v -> { store.clearConversation(); store.addMessage("ai", "다시 시작해볼까? 🙂", ""); d.dismiss(); renderAll(); });
+
+        Button studio = new Button(this);
+        studio.setText("이미지 · 캐릭터 스튜디오");
+        studio.setOnClickListener(v -> {
+            d.dismiss();
+            startActivity(new Intent(this, StudioActivity.class));
+        });
+        box.addView(studio);
+
+        Button editor = new Button(this);
+        editor.setText("AI로 앱 수정");
+        editor.setOnClickListener(v -> {
+            d.dismiss();
+            startActivity(new Intent(this, DeveloperEditorActivity.class));
+        });
+        box.addView(editor);
+
+        Button clear = new Button(this);
+        clear.setText("대화/스토리 초기화");
+        clear.setOnClickListener(v -> {
+            store.clearConversation();
+            store.addMessage("ai", "다시 시작해볼까? 🙂", "");
+            d.dismiss();
+            renderAll();
+        });
         box.addView(clear);
+
         d.setContentView(box);
-        Window w = d.getWindow();
         d.show();
         if (d.getWindow() != null) d.getWindow().setLayout((int)(getResources().getDisplayMetrics().widthPixels * 0.9), ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
+    private String avatarLetter() {
+        String n = store.aiName();
+        if (n == null || n.isEmpty()) return "AI";
+        return n.substring(0, 1);
+    }
+
     private TextView avatarView(String letter, int size) {
         TextView v = new TextView(this);
-        v.setText(letter); v.setGravity(Gravity.CENTER); v.setTextSize(size * 0.38f); v.setTextColor(Color.WHITE); v.setTypeface(Typeface.DEFAULT_BOLD);
+        v.setText(letter);
+        v.setGravity(Gravity.CENTER);
+        v.setTextSize(size * 0.38f);
+        v.setTextColor(Color.WHITE);
+        v.setTypeface(Typeface.DEFAULT_BOLD);
         v.setBackground(roundRect(Color.rgb(190,90,145), dp(size/2), Color.TRANSPARENT, 0));
         v.setLayoutParams(new ViewGroup.LayoutParams(dp(size), dp(size)));
         return v;
@@ -355,14 +414,22 @@ public class MainActivity extends Activity {
 
     private Button tinyButton(String text) {
         Button b = new Button(this);
-        b.setText(text); b.setTextSize(13); b.setAllCaps(false); b.setMinWidth(0); b.setMinimumWidth(0); b.setMinHeight(0); b.setMinimumHeight(0);
-        b.setPadding(dp(10), dp(7), dp(10), dp(7)); b.setBackgroundColor(Color.TRANSPARENT);
+        b.setText(text);
+        b.setTextSize(13);
+        b.setAllCaps(false);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setPadding(dp(10), dp(7), dp(10), dp(7));
+        b.setBackgroundColor(Color.TRANSPARENT);
         return b;
     }
 
     private GradientDrawable roundRect(int color, int radius, int strokeColor, int strokeDp) {
         GradientDrawable g = new GradientDrawable();
-        g.setColor(color); g.setCornerRadius(radius);
+        g.setColor(color);
+        g.setCornerRadius(radius);
         if (strokeDp > 0) g.setStroke(dp(strokeDp), strokeColor);
         return g;
     }
