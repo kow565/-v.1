@@ -65,7 +65,7 @@ jobs:
           adb install -r "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
           adb logcat -c
           adb shell am force-stop com.kow565.harincompanion || true
-          adb shell am start -W -n com.kow565.harincompanion/com.kow565.perchancecompanion.SafeMainActivity
+          adb shell am start -W -n com.kow565.harincompanion/com.kow565.perchancecompanion.InboxActivity
           sleep 6
           if ! adb shell pidof com.kow565.harincompanion | grep -q '[0-9]'; then
             echo 'App process exited after launch.'
@@ -73,10 +73,10 @@ jobs:
             exit 1
           fi
           adb shell uiautomator dump /sdcard/harin-window.xml >/dev/null 2>&1 || true
-          if adb shell cat /sdcard/harin-window.xml 2>/dev/null | grep -q 'Harin 복구 모드'; then
-            echo 'App launched into recovery mode instead of the normal chat screen.'
+          if ! adb shell cat /sdcard/harin-window.xml 2>/dev/null | grep -q '메시지'; then
+            echo 'DM inbox title was not found.'
             adb shell cat /sdcard/harin-window.xml || true
-            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|harincompanion|perchancecompanion|Process: com.kow565.harincompanion' || true
+            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|harincompanion|perchancecompanion' || true
             exit 1
           fi
-          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|com.kow565.harincompanion|com.kow565.perchancecompanion' | head -30 || true
+          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|com.kow565.harincompanion|InboxActivity' | head -30 || true
