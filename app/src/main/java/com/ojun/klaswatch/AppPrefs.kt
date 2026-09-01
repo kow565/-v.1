@@ -12,15 +12,21 @@ object AppPrefs {
     private const val TOKEN = "token"
     private const val INTERVAL = "interval_minutes"
     private const val LAST_STATUS = "last_status"
+    private const val LAST_RELAY_STATUS = "last_relay_status"
     private const val AUTO_SEED_URL = "auto_seed_url"
     private const val LAST_DISCOVERY = "last_discovery"
+    private const val DEFAULT_RELAY_TOKEN = "a5a7pKzeZnUnxC5P-UlMYJOLbNZfbjXR4ppviwgU59s"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun webhook(context: Context): String = prefs(context).getString(WEBHOOK, "") ?: ""
-    fun token(context: Context): String = prefs(context).getString(TOKEN, "") ?: ""
+    fun token(context: Context): String {
+        val stored = prefs(context).getString(TOKEN, null)
+        return if (stored.isNullOrBlank()) DEFAULT_RELAY_TOKEN else stored
+    }
     fun intervalMinutes(context: Context): Long = prefs(context).getLong(INTERVAL, 15L).coerceAtLeast(15L)
     fun lastStatus(context: Context): String = prefs(context).getString(LAST_STATUS, "아직 검사 기록이 없습니다.") ?: ""
+    fun lastRelayStatus(context: Context): String = prefs(context).getString(LAST_RELAY_STATUS, "이메일 중계 미설정") ?: ""
     fun autoSeedUrl(context: Context): String = prefs(context).getString(AUTO_SEED_URL, "") ?: ""
     fun lastDiscovery(context: Context): Long = prefs(context).getLong(LAST_DISCOVERY, 0L)
 
@@ -30,6 +36,14 @@ object AppPrefs {
             .putString(TOKEN, token.trim())
             .putLong(INTERVAL, interval.coerceAtLeast(15L))
             .apply()
+    }
+
+    fun saveWebhook(context: Context, webhook: String) {
+        prefs(context).edit().putString(WEBHOOK, webhook.trim()).apply()
+    }
+
+    fun setLastRelayStatus(context: Context, text: String) {
+        prefs(context).edit().putString(LAST_RELAY_STATUS, text).apply()
     }
 
     fun setAutoSeedUrl(context: Context, url: String) {

@@ -1,12 +1,10 @@
 /**
  * KLAS Watch -> Gmail relay
- * 1) RECIPIENT를 본인 Gmail 주소로 바꾸세요.
- * 2) TOKEN을 길고 랜덤한 값으로 바꾸세요.
- * 3) Apps Script에서 '웹 앱'으로 배포: 실행 사용자=나, 액세스=모든 사용자.
- * 4) 배포 URL과 TOKEN을 Android 앱에 입력하세요.
+ * Apps Script에서 '웹 앱'으로 배포: 실행 사용자=나, 액세스=모든 사용자.
+ * 배포 URL만 Android 앱의 '이메일 중계 설정'에 붙여넣으세요.
  */
-const RECIPIENT = 'YOUR_GMAIL@gmail.com';
-const TOKEN = 'CHANGE_THIS_TO_A_LONG_RANDOM_TOKEN';
+const RECIPIENT = 'ojunk318@gmail.com';
+const TOKEN = 'a5a7pKzeZnUnxC5P-UlMYJOLbNZfbjXR4ppviwgU59s';
 
 function doGet() {
   return json_({ok: true, service: 'KLAS Watch Relay'});

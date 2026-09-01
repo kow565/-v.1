@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.ojun.klaswatch"
-    compileSdk = 36
+    compileSdk = 37
 
     signingConfigs {
         create("klaswatchStable") {
@@ -21,8 +21,8 @@ android {
         applicationId = "com.ojun.klaswatch"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     buildTypes {

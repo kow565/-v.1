@@ -5,12 +5,14 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -22,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var loginHint: TextView
     private lateinit var toggleWeb: Button
+    private lateinit var relayStatus: TextView
     private var loginDetected = false
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -39,7 +42,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         root.addView(TextView(this).apply {
-            text = "KLAS Watch · 자동 추적"
+            text = "KLAS Watch · 자동 추적 v0.3"
             textSize = 24f
             setTextColor(Color.BLACK)
         })
@@ -52,7 +55,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(status)
 
         loginHint = TextView(this).apply {
-            text = "아래 큰 화면에서 KLAS에 한 번만 로그인하세요. 로그인되면 과목별 공지 화면을 찾을 필요 없이 자동 추적을 시작합니다."
+            text = "아래 큰 화면에서 KLAS에 한 번만 로그인하세요. 로그인되면 과목별 설정 없이 공지·과제·시험·강의자료를 자동 추적합니다."
             textSize = 14f
             setPadding(0, 4, 0, 10)
         }
@@ -70,7 +73,7 @@ class MainActivity : AppCompatActivity() {
             settings.useWideViewPort = false
             settings.builtInZoomControls = true
             settings.displayZoomControls = false
-            settings.userAgentString = settings.userAgentString + " KLASWatch/0.2"
+            settings.userAgentString = settings.userAgentString + " KLASWatch/0.3"
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
@@ -122,6 +125,85 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(refresh)
 
+        val relayToggle = Button(this).apply {
+            text = "이메일 중계 설정 ▾"
+        }
+        root.addView(relayToggle)
+
+        val relayPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, 6, 0, 6)
+        }
+        root.addView(relayPanel)
+
+        relayStatus = TextView(this).apply {
+            text = AppPrefs.lastRelayStatus(this@MainActivity)
+            textSize = 13f
+            setPadding(0, 4, 0, 6)
+        }
+        relayPanel.addView(relayStatus)
+
+        relayPanel.addView(TextView(this).apply {
+            text = "Google Apps Script 웹앱 주소를 한 번만 붙여넣으면 이후 새 KLAS 항목을 Gmail로 자동 중계합니다."
+            textSize = 12f
+        })
+
+        val webhookInput = EditText(this).apply {
+            hint = "https://script.google.com/macros/s/.../exec"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setText(AppPrefs.webhook(this@MainActivity))
+        }
+        relayPanel.addView(webhookInput)
+
+        val relayButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        val saveRelay = Button(this).apply {
+            text = "주소 저장"
+            setOnClickListener {
+                val url = webhookInput.text.toString().trim()
+                AppPrefs.saveWebhook(this@MainActivity, url)
+                val text = if (url.isBlank()) "이메일 중계 미설정" else "중계 주소 저장됨 · 테스트 필요"
+                AppPrefs.setLastRelayStatus(this@MainActivity, text)
+                relayStatus.text = text
+                toast("이메일 중계 주소를 저장했습니다.")
+            }
+        }
+        relayButtons.addView(saveRelay, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+        val testRelay = Button(this).apply {
+            text = "테스트 메일"
+            setOnClickListener {
+                val url = webhookInput.text.toString().trim()
+                if (url.isBlank()) {
+                    relayStatus.text = "웹앱 주소를 먼저 붙여넣어 주세요."
+                    return@setOnClickListener
+                }
+                AppPrefs.saveWebhook(this@MainActivity, url)
+                relayStatus.text = "테스트 메일 전송 중…"
+                isEnabled = false
+                Thread {
+                    val result = RelayClient.sendTest(url, AppPrefs.token(this@MainActivity))
+                    val text = if (result.ok) "이메일 중계 정상 · 테스트 메일 전송 성공" else "이메일 중계 실패 · ${result.message}"
+                    AppPrefs.setLastRelayStatus(this@MainActivity, text)
+                    runOnUiThread {
+                        relayStatus.text = text
+                        isEnabled = true
+                        toast(if (result.ok) "테스트 메일을 보냈습니다." else "테스트 메일 전송에 실패했습니다.")
+                    }
+                }.start()
+            }
+        }
+        relayButtons.addView(testRelay, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        relayPanel.addView(relayButtons)
+
+        relayToggle.setOnClickListener {
+            val opening = relayPanel.visibility != View.VISIBLE
+            relayPanel.visibility = if (opening) View.VISIBLE else View.GONE
+            relayToggle.text = if (opening) "이메일 중계 설정 ▴" else "이메일 중계 설정 ▾"
+        }
+
         root.addView(TextView(this).apply {
             text = "로그인 후에는 앱을 닫아도 Android가 허용하는 시점에 백그라운드 검사합니다. 앱을 강제 종료(Force stop)하면 다시 열기 전까지 중단될 수 있습니다."
             textSize = 12f
@@ -133,7 +215,7 @@ class MainActivity : AppCompatActivity() {
             webView.loadUrl("https://klas.kw.ac.kr/usr/cmn/login/LoginForm.do")
         } else {
             loginDetected = true
-            loginHint.text = "이전에 로그인한 KLAS 세션을 사용합니다. 자동으로 공지·과제·시험 관련 페이지를 탐색합니다."
+            loginHint.text = "이전에 로그인한 KLAS 세션을 사용합니다. 자동으로 공지·과제·시험·강의 관련 페이지를 탐색합니다."
             webView.loadUrl(seed)
             Scheduler.schedule(this)
             Scheduler.runNow(this)

@@ -22,11 +22,9 @@ jobs:
           base64 -d signing/klaswatch-dev.jks.b64 > signing/klaswatch-dev.jks
           cp build.gradle.agp9-fixed.kts build.gradle.kts
           cp app/build.gradle.agp9-fixed.kts app/build.gradle.kts
-          sed -i 's/compileSdk = 36/compileSdk = 37/' app/build.gradle.kts
-          sed -i 's/ids.takeLast(500)/ids.toList().takeLast(500)/' app/src/main/java/com/ojun/klaswatch/AppPrefs.kt
       - name: Build debug APK
         run: gradle :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: KLASWatch-v0.2-stable-apk
+          name: KLASWatch-v0.3-stable-apk
           path: app/build/outputs/apk/debug/app-debug.apk
