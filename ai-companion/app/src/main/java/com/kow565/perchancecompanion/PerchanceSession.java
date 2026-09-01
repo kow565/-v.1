@@ -5,11 +5,16 @@ import android.content.SharedPreferences;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class PerchanceSession {
     private static final String PREFS = "harin_perchance_session_v2";
     private static final long MAX_AGE_MS = 12L * 60L * 60L * 1000L;
+    private static final Pattern KEY64 = Pattern.compile("(?i)userKey(?:[\\\"']?\\s*[:=]\\s*[\\\"']?|[^a-f0-9]{0,12})([a-f0-9]{64})");
 
     private PerchanceSession() {}
 
@@ -38,20 +43,34 @@ public final class PerchanceSession {
     public static boolean hasImage(Context context) { return !key(context, "image").isEmpty(); }
     public static boolean isReady(Context context) { return hasText(context) && hasImage(context); }
 
+    public static void clearKind(Context context, String kind) {
+        context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .remove(kind + "_key").remove(kind + "_cookie").remove(kind + "_time").apply();
+    }
+
     public static void clear(Context context) {
         context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply();
     }
 
     public static String parseUserKey(String content) {
-        if (content == null) return "";
+        List<String> keys = parseUserKeys(content);
+        return keys.isEmpty() ? "" : keys.get(0);
+    }
+
+    public static List<String> parseUserKeys(String content) {
+        ArrayList<String> out = new ArrayList<>();
+        if (content == null) return out;
         String raw = content.trim();
         try {
             Object parsed = new org.json.JSONTokener(raw).nextValue();
-            String found = findKey(parsed);
-            if (!found.isEmpty()) return found;
+            collectKeys(parsed, out);
         } catch (Exception ignored) {}
 
         String normalized = raw.replace("&quot;", "\"").replace("\\\"", "\"");
+        Matcher m = KEY64.matcher(normalized);
+        while (m.find()) addUnique(out, m.group(1));
+
+        // Fallback for JSON responses whose key is not exactly 64 chars.
         String needle = "\"userKey\"";
         int i = normalized.indexOf(needle);
         if (i >= 0) {
@@ -59,29 +78,28 @@ public final class PerchanceSession {
             if (colon >= 0) {
                 int q1 = normalized.indexOf('\"', colon + 1);
                 int q2 = q1 < 0 ? -1 : normalized.indexOf('\"', q1 + 1);
-                if (q1 >= 0 && q2 > q1 + 1) return normalized.substring(q1 + 1, q2).trim();
+                if (q1 >= 0 && q2 > q1 + 1) addUnique(out, normalized.substring(q1 + 1, q2).trim());
             }
         }
-        return "";
+        return out;
     }
 
-    private static String findKey(Object value) {
+    private static void collectKeys(Object value, List<String> out) {
         if (value instanceof JSONObject) {
             JSONObject o = (JSONObject) value;
             String direct = o.optString("userKey", "").trim();
-            if (!direct.isEmpty()) return direct;
+            if (!direct.isEmpty()) addUnique(out, direct);
             Iterator<String> it = o.keys();
-            while (it.hasNext()) {
-                String found = findKey(o.opt(it.next()));
-                if (!found.isEmpty()) return found;
-            }
+            while (it.hasNext()) collectKeys(o.opt(it.next()), out);
         } else if (value instanceof org.json.JSONArray) {
             org.json.JSONArray a = (org.json.JSONArray) value;
-            for (int i = 0; i < a.length(); i++) {
-                String found = findKey(a.opt(i));
-                if (!found.isEmpty()) return found;
-            }
+            for (int i = 0; i < a.length(); i++) collectKeys(a.opt(i), out);
         }
-        return "";
+    }
+
+    private static void addUnique(List<String> out, String key) {
+        if (key == null) return;
+        String k = key.trim();
+        if (!k.isEmpty() && !out.contains(k)) out.add(k);
     }
 }
