@@ -86,7 +86,7 @@ class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWo
         val now = SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date())
         val autoCount = targets.count { it.name.startsWith("[자동]") }
         val status = buildString {
-            append("$now 자동 검사 완료 · 감시 $autoCount개 · 정상 $okCount/${targets.size} · 새 공지 ${newCount}건")
+            append("$now 자동 검사 완료 · 감시 ${autoCount}개 · 정상 $okCount/${targets.size} · 새 공지 ${newCount}건")
             if (errors.isNotEmpty()) append("\n" + errors.take(5).joinToString(" / "))
         }
         AppPrefs.setLastStatus(applicationContext, status)
