@@ -14,6 +14,10 @@ public class CharacterDesignerAi {
         public String summary = "";
     }
 
+    public CharacterPlan design(String requestedName, String description) throws Exception {
+        return design(HarinApplication.context(), requestedName, description);
+    }
+
     public CharacterPlan design(Context context, String requestedName, String description) throws Exception {
         String prompt = "Design one fictional adult DM companion character from the user's description. " +
                 "The character must be clearly 18 or older; use age 25 by default when age is not specified. " +
