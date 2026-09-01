@@ -7,10 +7,10 @@ on:
     paths:
       - 'ai-companion/**'
       - '.github/workflows/ai-companion-apk.yml'
-  pull_request:
-    paths:
-      - 'ai-companion/**'
-      - '.github/workflows/ai-companion-apk.yml'
+
+concurrency:
+  group: ai-companion-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
