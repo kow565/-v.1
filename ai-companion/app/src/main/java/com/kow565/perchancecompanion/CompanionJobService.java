@@ -12,6 +12,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.time.LocalTime;
 import java.util.Random;
 
@@ -31,46 +34,55 @@ public class CompanionJobService extends JobService {
                     .setPeriodic(30L * 60L * 1000L)
                     .build();
             scheduler.schedule(info);
-        } catch (Throwable ignored) {
-            // Background scheduling must never prevent the main chat screen from opening.
-        }
+        } catch (Throwable ignored) {}
     }
 
     @Override public boolean onStartJob(JobParameters params) {
         try {
             new Thread(() -> {
-                try {
-                    runAgent();
-                } catch (Throwable ignored) {
-                    // Provider/runtime failures in the background agent must not kill the app process.
-                } finally {
-                    try { jobFinished(params, false); } catch (Throwable ignored) {}
-                }
+                try { runAllCharacters(); }
+                catch (Throwable ignored) {}
+                finally { try { jobFinished(params, false); } catch (Throwable ignored) {} }
             }, "harin-background-agent").start();
             return true;
-        } catch (Throwable ignored) {
-            return false;
+        } catch (Throwable ignored) { return false; }
+    }
+
+    private void runAllCharacters() {
+        if (!PerchanceSession.hasText(this)) return;
+        CharacterLibrary library = new CharacterLibrary(this);
+        JSONArray chars = library.characters();
+        long now = System.currentTimeMillis();
+        int hour = LocalTime.now().getHour();
+        AiEngine engine = new AiEngine();
+
+        for (int i = 0; i < chars.length(); i++) {
+            JSONObject c = chars.optJSONObject(i);
+            if (c == null) continue;
+            String id = c.optString("id", "");
+            if (id.isEmpty()) continue;
+            CompanionStore store = new CompanionStore(this, id);
+            if (store.messages().length() == 0) {
+                store.initializeCharacter(c.optString("name", "하린"), c.optJSONObject("state"), c.optInt("seed", 428731), false);
+                store.addMessage("ai", firstGreeting(c.optString("name", "하린")), "");
+            }
+            runCharacter(store, engine, now, hour);
         }
     }
 
-    private void runAgent() {
-        CompanionStore store = new CompanionStore(this);
-        AiEngine engine = new AiEngine();
-        long now = System.currentTimeMillis();
+    private void runCharacter(CompanionStore store, AiEngine engine, long now, int hour) {
         if (store.nextContactAt() == 0L) store.setNextContactAt(now + randomDelay(store.contactMinMinutes(), store.contactMaxMinutes()));
         if (store.nextStoryAt() == 0L) store.setNextStoryAt(now + randomDelay(store.storyMinMinutes(), store.storyMaxMinutes()));
+        if (isQuietHour(hour, store.quietStartHour(), store.quietEndHour())) return;
 
-        int hour = LocalTime.now().getHour();
-        boolean quiet = isQuietHour(hour, store.quietStartHour(), store.quietEndHour());
-
-        if (!quiet && now >= store.nextContactAt()) {
+        if (now >= store.nextContactAt()) {
             try {
                 AiEngine.Turn t = engine.chatTurn(store, "", true);
                 store.applyState(t.state);
-                boolean makeImage = t.imageMoment || store.aiTurnsSinceImage() >= 3;
+                boolean makeImage = t.imageMoment || store.aiTurnsSinceImage() >= store.imageEveryTurns();
                 String image = "";
-                if (makeImage) {
-                    try { image = engine.generateImage(this, store, t.imagePrompt.isEmpty() ? "a casual selfie sent to her partner" : t.imagePrompt); }
+                if (makeImage && PerchanceSession.hasImage(this)) {
+                    try { image = engine.generateImage(this, store, t.imagePrompt.isEmpty() ? "a casual selfie sent in a DM" : t.imagePrompt); }
                     catch (Throwable ignored) {}
                 }
                 store.addMessage("ai", t.reply, image);
@@ -80,16 +92,26 @@ public class CompanionJobService extends JobService {
             store.setNextContactAt(now + randomDelay(store.contactMinMinutes(), store.contactMaxMinutes()));
         }
 
-        if (!quiet && now >= store.nextStoryAt()) {
+        if (now >= store.nextStoryAt()) {
             try {
                 AiEngine.StoryTurn st = engine.storyTurn(store);
                 store.applyState(st.state);
-                String image = engine.generateImage(this, store, st.imagePrompt);
+                String image = "";
+                if (PerchanceSession.hasImage(this)) {
+                    try { image = engine.generateImage(this, store, st.imagePrompt); }
+                    catch (Throwable ignored) {}
+                }
                 store.addStory(st.caption, image);
                 notifyUser(store.aiName(), "새 스토리를 올렸어");
             } catch (Throwable ignored) {}
             store.setNextStoryAt(now + randomDelay(store.storyMinMinutes(), store.storyMaxMinutes()));
         }
+    }
+
+    private String firstGreeting(String name) {
+        if ("미나".equals(name)) return "어, 왔네? 😏 뭐 하고 있었어?";
+        if ("소라".equals(name)) return "왔어? 오늘은 좀 어땠어 🙂";
+        return "자기 왔어? 나 방금 좀 쉬고 있었어 🙂";
     }
 
     private long randomDelay(int minMinutes, int maxMinutes) {
@@ -109,8 +131,10 @@ public class CompanionJobService extends JobService {
         try {
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) return;
-            if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new NotificationChannel(CHANNEL, "하린 메시지와 스토리", NotificationManager.IMPORTANCE_DEFAULT));
-            Intent intent = new Intent(this, MainActivity.class);
+            if (Build.VERSION.SDK_INT >= 26)
+                nm.createNotificationChannel(new NotificationChannel(CHANNEL, "AI DM 메시지와 스토리", NotificationManager.IMPORTANCE_DEFAULT));
+            Intent intent = new Intent(this, InboxActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             PendingIntent pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             android.app.Notification n = new android.app.Notification.Builder(this, CHANNEL)
                     .setSmallIcon(android.R.drawable.stat_notify_chat)
@@ -120,9 +144,7 @@ public class CompanionJobService extends JobService {
                     .setContentIntent(pi)
                     .build();
             nm.notify((int) (System.currentTimeMillis() & 0x7fffffff), n);
-        } catch (Throwable ignored) {
-            // Notifications are optional; never crash background work when permission/device behavior differs.
-        }
+        } catch (Throwable ignored) {}
     }
 
     @Override public boolean onStopJob(JobParameters params) { return true; }
