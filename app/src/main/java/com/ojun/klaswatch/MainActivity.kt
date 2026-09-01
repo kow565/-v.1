@@ -5,22 +5,24 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.*
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var status: TextView
-    private lateinit var targetsBox: LinearLayout
-    private lateinit var webhookInput: EditText
-    private lateinit var tokenInput: EditText
-    private lateinit var intervalSpinner: Spinner
+    private lateinit var loginHint: TextView
+    private lateinit var toggleWeb: Button
+    private var loginDetected = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,159 +34,135 @@ class MainActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 20, 24, 20)
+            setPadding(20, 16, 20, 16)
         }
-        val scroll = ScrollView(this).apply { addView(root) }
-        setContentView(scroll)
+        setContentView(root)
 
         root.addView(TextView(this).apply {
-            text = "KLAS Watch"
-            textSize = 26f
+            text = "KLAS Watch · 자동 추적"
+            textSize = 24f
             setTextColor(Color.BLACK)
-        })
-        root.addView(TextView(this).apply {
-            text = "PC 없이 휴대폰에서 KLAS 공지를 감시하고 Gmail로 중계합니다. KLAS 비밀번호는 앱이 저장하지 않습니다."
-            textSize = 14f
         })
 
         status = TextView(this).apply {
             text = AppPrefs.lastStatus(this@MainActivity)
-            setPadding(0, 18, 0, 18)
+            textSize = 14f
+            setPadding(0, 10, 0, 10)
         }
         root.addView(status)
 
-        root.addView(section("1. Gmail 중계 설정"))
-        webhookInput = input("Apps Script 웹 앱 URL", AppPrefs.webhook(this))
-        tokenInput = input("중계 보안 토큰", AppPrefs.token(this))
-        root.addView(webhookInput)
-        root.addView(tokenInput)
-
-        intervalSpinner = Spinner(this)
-        val intervals = listOf("15분", "30분", "60분")
-        intervalSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, intervals)
-        intervalSpinner.setSelection(when (AppPrefs.intervalMinutes(this)) { 60L -> 2; 30L -> 1; else -> 0 })
-        root.addView(intervalSpinner)
-
-        val save = Button(this).apply { text = "설정 저장 + 백그라운드 감시 시작" }
-        save.setOnClickListener {
-            val min = when (intervalSpinner.selectedItemPosition) { 2 -> 60L; 1 -> 30L; else -> 15L }
-            AppPrefs.saveSettings(this, webhookInput.text.toString(), tokenInput.text.toString(), min)
-            Scheduler.schedule(this)
-            toast("저장했습니다. 앱을 닫아도 감시가 예약됩니다.")
+        loginHint = TextView(this).apply {
+            text = "아래 큰 화면에서 KLAS에 한 번만 로그인하세요. 로그인되면 과목별 공지 화면을 찾을 필요 없이 자동 추적을 시작합니다."
+            textSize = 14f
+            setPadding(0, 4, 0, 10)
         }
-        root.addView(save)
-
-        val test = Button(this).apply { text = "Gmail 중계 테스트 메일 보내기" }
-        test.setOnClickListener {
-            val url = webhookInput.text.toString().trim()
-            val token = tokenInput.text.toString().trim()
-            Executors.newSingleThreadExecutor().execute {
-                val ok = runCatching { RelayClient.sendTest(url, token) }.getOrDefault(false)
-                runOnUiThread { toast(if (ok) "테스트 전송 성공" else "전송 실패: 웹훅 URL/토큰을 확인하세요") }
-            }
-        }
-        root.addView(test)
-
-        root.addView(section("2. KLAS 로그인 및 감시 페이지 추가"))
-        root.addView(TextView(this).apply {
-            text = "아래 KLAS 창에서 직접 로그인 → 감시하고 싶은 과목 공지 목록까지 이동 → ‘현재 페이지 감시 추가’를 누르세요. 여러 과목을 반복해서 추가할 수 있습니다."
-        })
+        root.addView(loginHint)
 
         webView = WebView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 900)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.userAgentString = settings.userAgentString + " KLASWatch/0.1"
-            webViewClient = WebViewClient()
+            settings.loadWithOverviewMode = false
+            settings.useWideViewPort = false
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+            settings.userAgentString = settings.userAgentString + " KLASWatch/0.2"
             webChromeClient = WebChromeClient()
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String) {
+                    super.onPageFinished(view, url)
+                    if (!url.startsWith("https://klas.kw.ac.kr")) return
+                    view.evaluateJavascript(
+                        "(function(){var t=(document.body&&document.body.innerText)||''; return t.indexOf('로그아웃')>=0 || t.indexOf('개인정보수정')>=0 || t.indexOf('수강')>=0 && t.indexOf('강의')>=0;})()"
+                    ) { result ->
+                        if (result == "true") onLoginDetected(url)
+                    }
+                }
+            }
         }
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
         root.addView(webView)
 
-        val navRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val loginBtn = Button(this).apply { text = "KLAS 로그인 열기" }
-        loginBtn.setOnClickListener { webView.loadUrl("https://klas.kw.ac.kr/usr/cmn/login/LoginForm.do") }
-        val addBtn = Button(this).apply { text = "현재 페이지 감시 추가" }
-        addBtn.setOnClickListener {
-            val url = webView.url.orEmpty()
-            val title = webView.title.orEmpty().ifBlank { "KLAS 공지" }
-            if (!url.startsWith("https://")) toast("먼저 KLAS 페이지를 여세요") else {
-                AppPrefs.addTarget(this, title, url)
-                refreshTargets()
-                Scheduler.schedule(this)
-                toast("감시 대상에 추가했습니다. 최초 검사는 기준선만 저장합니다.")
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        toggleWeb = Button(this).apply {
+            text = "KLAS 화면 숨기기"
+            setOnClickListener {
+                if (webView.visibility == View.VISIBLE) {
+                    webView.visibility = View.GONE
+                    text = "KLAS 화면 열기"
+                } else {
+                    webView.visibility = View.VISIBLE
+                    text = "KLAS 화면 숨기기"
+                }
             }
         }
-        navRow.addView(loginBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        navRow.addView(addBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(navRow)
+        controls.addView(toggleWeb, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-        root.addView(section("3. 감시 대상"))
-        targetsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(targetsBox)
-        refreshTargets()
-
-        val now = Button(this).apply { text = "지금 즉시 검사" }
-        now.setOnClickListener {
-            Scheduler.runNow(this)
-            toast("검사를 요청했습니다. 잠시 뒤 상태가 갱신됩니다.")
+        val scan = Button(this).apply {
+            text = "지금 검사"
+            setOnClickListener {
+                AppPrefs.requestRediscovery(this@MainActivity)
+                Scheduler.schedule(this@MainActivity)
+                Scheduler.runNow(this@MainActivity)
+                toast("자동 탐색 + 검사를 시작했습니다.")
+            }
         }
-        root.addView(now)
+        controls.addView(scan, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(controls)
 
-        val refresh = Button(this).apply { text = "검사 상태 새로고침" }
-        refresh.setOnClickListener { status.text = AppPrefs.lastStatus(this) }
+        val refresh = Button(this).apply {
+            text = "상태 새로고침"
+            setOnClickListener { status.text = AppPrefs.lastStatus(this@MainActivity) }
+        }
         root.addView(refresh)
 
         root.addView(TextView(this).apply {
-            text = "※ Android의 절전/Doze 정책 때문에 15분은 ‘정확히 매 15분’이 아니라 시스템이 허용하는 시점에 실행됩니다. 앱을 강제 종료(Force stop)하면 다시 앱을 열기 전까지 작업이 멈출 수 있습니다."
+            text = "로그인 후에는 앱을 닫아도 Android가 허용하는 시점에 백그라운드 검사합니다. 앱을 강제 종료(Force stop)하면 다시 열기 전까지 중단될 수 있습니다."
             textSize = 12f
-            setPadding(0, 22, 0, 40)
+            setPadding(0, 8, 0, 4)
         })
 
-        if (webView.url == null) webView.loadUrl("https://klas.kw.ac.kr/usr/cmn/login/LoginForm.do")
+        val seed = AppPrefs.autoSeedUrl(this)
+        if (seed.isBlank()) {
+            webView.loadUrl("https://klas.kw.ac.kr/usr/cmn/login/LoginForm.do")
+        } else {
+            loginDetected = true
+            loginHint.text = "이전에 로그인한 KLAS 세션을 사용합니다. 자동으로 공지·과제·시험 관련 페이지를 탐색합니다."
+            webView.loadUrl(seed)
+            Scheduler.schedule(this)
+            Scheduler.runNow(this)
+        }
+    }
+
+    private fun onLoginDetected(url: String) {
+        if (loginDetected && AppPrefs.autoSeedUrl(this) == url) return
+        loginDetected = true
+        AppPrefs.setAutoSeedUrl(this, url)
+        AppPrefs.requestRediscovery(this)
+        AppPrefs.setLastStatus(this, "KLAS 로그인 확인됨 · 자동 감시 페이지 탐색 중…")
+        status.text = AppPrefs.lastStatus(this)
+        loginHint.text = "로그인 완료. 이제 과목별 공지 화면을 직접 등록할 필요 없습니다."
         Scheduler.schedule(this)
-    }
+        Scheduler.runNow(this)
 
-    private fun section(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 19f
-        setTextColor(Color.BLACK)
-        setPadding(0, 28, 0, 8)
-    }
-
-    private fun input(hintText: String, value: String) = EditText(this).apply {
-        hint = hintText
-        setText(value)
-        isSingleLine = true
-    }
-
-    private fun refreshTargets() {
-        if (!::targetsBox.isInitialized) return
-        targetsBox.removeAllViews()
-        val list = AppPrefs.targets(this)
-        if (list.isEmpty()) {
-            targetsBox.addView(TextView(this).apply { text = "아직 등록된 공지 페이지가 없습니다." })
-            return
-        }
-        list.forEach { t ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            row.addView(TextView(this).apply {
-                text = "${t.name}\n${t.url}"
-                textSize = 12f
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(Button(this).apply {
-                text = "삭제"
-                setOnClickListener { AppPrefs.removeTarget(this@MainActivity, t.id); refreshTargets() }
-            })
-            targetsBox.addView(row)
-        }
+        webView.postDelayed({
+            webView.visibility = View.GONE
+            toggleWeb.text = "KLAS 화면 열기"
+            toast("로그인 완료. 자동 추적을 시작했습니다.")
+        }, 900)
     }
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (::webView.isInitialized && webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        if (::webView.isInitialized && webView.visibility == View.VISIBLE && webView.canGoBack()) webView.goBack()
+        else super.onBackPressed()
     }
 }
