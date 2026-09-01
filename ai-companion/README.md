@@ -16,6 +16,24 @@ Instagram DM/Story 느낌의 개인용 AI companion Android 앱 프로토타입�
 - 새벽 01:00~08:00은 자동 활동을 쉬도록 설정
 - 알림으로 선톡/새 스토리 표시
 
+## 반복 버전 업데이트
+
+버전은 `version.properties` 한 곳에서 관리합니다.
+
+```properties
+VERSION_NAME=0.1.0
+VERSION_CODE=1
+```
+
+다음 버전을 만들 때는 다음 스크립트를 실행하면 `VERSION_NAME`을 바꾸고 `VERSION_CODE`를 자동으로 1 올립니다.
+
+```bash
+cd ai-companion
+./scripts/bump-version.sh 0.2.0
+```
+
+그 뒤 커밋/푸시하면 GitHub Actions가 `Harin-v0.2.0-debug.apk`처럼 버전이 붙은 APK 아티팩트를 새로 만듭니다. 이전 Actions 빌드 기록과 아티팩트도 버전별로 구분할 수 있습니다. 변경 사항은 `CHANGELOG.md`에 누적하면 됩니다.
+
 ## Perchance 연결 방식
 
 Perchance는 공식 public REST API를 제공하지 않으므로, 앱은 현재 웹앱이 사용하는 비공식 엔드포인트를 사용합니다.
@@ -38,7 +56,7 @@ gradle :app:assembleDebug
 
 결과: `app/build/outputs/apk/debug/app-debug.apk`
 
-CI 검증 브랜치: `ai-companion-v1` (PR 검증 워크플로 활성화)
+CI 검증 브랜치: `ai-companion-v1`
 
 ## 주의
 

@@ -27,10 +27,18 @@ jobs:
           gradle-version: '9.5.0'
       - name: Install Android SDK 35
         run: yes | sdkmanager 'platforms;android-35' 'build-tools;35.0.0' > /dev/null
+      - name: Read app version
+        run: |
+          VERSION_NAME=$(grep '^VERSION_NAME=' ai-companion/version.properties | cut -d= -f2)
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
       - name: Build debug APK
         working-directory: ai-companion
         run: gradle :app:assembleDebug --stacktrace
+      - name: Name APK by version
+        run: |
+          mkdir -p ai-companion/dist
+          cp ai-companion/app/build/outputs/apk/debug/app-debug.apk "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: Harin-AI-Companion-debug-apk
-          path: ai-companion/app/build/outputs/apk/debug/app-debug.apk
+          name: Harin-v${{ env.VERSION_NAME }}-debug-apk
+          path: ai-companion/dist/Harin-v${{ env.VERSION_NAME }}-debug.apk
