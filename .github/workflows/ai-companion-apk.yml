@@ -38,6 +38,30 @@ jobs:
         run: |
           mkdir -p ai-companion/dist
           cp ai-companion/app/build/outputs/apk/debug/app-debug.apk "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
+      - name: Install emulator image
+        run: yes | sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64' > /dev/null
+      - name: Launch smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo no | avdmanager create avd -n harin_ci -k 'system-images;android-35;google_apis;x86_64' --force
+          "$ANDROID_HOME/emulator/emulator" -avd harin_ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > /tmp/harin-emulator.log 2>&1 &
+          adb wait-for-device
+          for i in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then break; fi
+            sleep 1
+          done
+          adb install -r "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
+          adb logcat -c
+          adb shell am force-stop com.kow565.perchancecompanion || true
+          adb shell am start -W -n com.kow565.perchancecompanion/.MainActivity
+          sleep 6
+          if ! adb shell pidof com.kow565.perchancecompanion | grep -q '[0-9]'; then
+            echo 'App process exited after launch.'
+            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|perchancecompanion|Process: com.kow565.perchancecompanion' || true
+            exit 1
+          fi
+          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|com.kow565.perchancecompanion' | head -30 || true
       - uses: actions/upload-artifact@v4
         with:
           name: Harin-v${{ env.VERSION_NAME }}-debug-apk
