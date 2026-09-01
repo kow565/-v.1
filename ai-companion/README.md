@@ -38,7 +38,7 @@ gradle :app:assembleDebug
 
 결과: `app/build/outputs/apk/debug/app-debug.apk`
 
-CI 검증 브랜치: `ai-companion-v1`
+CI 검증 브랜치: `ai-companion-v1` (PR 검증 워크플로 활성화)
 
 ## 주의
 
