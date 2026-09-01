@@ -21,21 +21,36 @@ public class CompanionJobService extends JobService {
     private final Random random = new Random();
 
     public static void schedule(Context context) {
-        JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (scheduler == null) return;
-        JobInfo info = new JobInfo.Builder(JOB_ID, new ComponentName(context, CompanionJobService.class))
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                .setPersisted(true)
-                .setPeriodic(30L * 60L * 1000L)
-                .build();
-        scheduler.schedule(info);
+        if (context == null) return;
+        try {
+            JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            if (scheduler == null) return;
+            JobInfo info = new JobInfo.Builder(JOB_ID, new ComponentName(context, CompanionJobService.class))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setPersisted(true)
+                    .setPeriodic(30L * 60L * 1000L)
+                    .build();
+            scheduler.schedule(info);
+        } catch (Throwable ignored) {
+            // Background scheduling must never prevent the main chat screen from opening.
+        }
     }
 
     @Override public boolean onStartJob(JobParameters params) {
-        new Thread(() -> {
-            try { runAgent(); } finally { jobFinished(params, false); }
-        }).start();
-        return true;
+        try {
+            new Thread(() -> {
+                try {
+                    runAgent();
+                } catch (Throwable ignored) {
+                    // Provider/runtime failures in the background agent must not kill the app process.
+                } finally {
+                    try { jobFinished(params, false); } catch (Throwable ignored) {}
+                }
+            }, "harin-background-agent").start();
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private void runAgent() {
@@ -56,12 +71,12 @@ public class CompanionJobService extends JobService {
                 String image = "";
                 if (makeImage) {
                     try { image = engine.generateImage(this, store, t.imagePrompt.isEmpty() ? "a casual selfie sent to her partner" : t.imagePrompt); }
-                    catch (Exception ignored) {}
+                    catch (Throwable ignored) {}
                 }
                 store.addMessage("ai", t.reply, image);
                 store.bumpAiTurn(!image.isEmpty());
                 notifyUser(store.aiName(), t.reply);
-            } catch (Exception ignored) {}
+            } catch (Throwable ignored) {}
             store.setNextContactAt(now + randomDelay(store.contactMinMinutes(), store.contactMaxMinutes()));
         }
 
@@ -72,7 +87,7 @@ public class CompanionJobService extends JobService {
                 String image = engine.generateImage(this, store, st.imagePrompt);
                 store.addStory(st.caption, image);
                 notifyUser(store.aiName(), "새 스토리를 올렸어");
-            } catch (Exception ignored) {}
+            } catch (Throwable ignored) {}
             store.setNextStoryAt(now + randomDelay(store.storyMinMinutes(), store.storyMaxMinutes()));
         }
     }
@@ -91,19 +106,23 @@ public class CompanionJobService extends JobService {
     }
 
     private void notifyUser(String title, String text) {
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm == null) return;
-        if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new NotificationChannel(CHANNEL, "하린 메시지와 스토리", NotificationManager.IMPORTANCE_DEFAULT));
-        Intent intent = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        android.app.Notification n = new android.app.Notification.Builder(this, CHANNEL)
-                .setSmallIcon(android.R.drawable.stat_notify_chat)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setAutoCancel(true)
-                .setContentIntent(pi)
-                .build();
-        nm.notify((int) (System.currentTimeMillis() & 0x7fffffff), n);
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new NotificationChannel(CHANNEL, "하린 메시지와 스토리", NotificationManager.IMPORTANCE_DEFAULT));
+            Intent intent = new Intent(this, MainActivity.class);
+            PendingIntent pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            android.app.Notification n = new android.app.Notification.Builder(this, CHANNEL)
+                    .setSmallIcon(android.R.drawable.stat_notify_chat)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setAutoCancel(true)
+                    .setContentIntent(pi)
+                    .build();
+            nm.notify((int) (System.currentTimeMillis() & 0x7fffffff), n);
+        } catch (Throwable ignored) {
+            // Notifications are optional; never crash background work when permission/device behavior differs.
+        }
     }
 
     @Override public boolean onStopJob(JobParameters params) { return true; }
