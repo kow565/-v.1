@@ -64,19 +64,19 @@ jobs:
           fi
           adb install -r "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
           adb logcat -c
-          adb shell am force-stop com.kow565.perchancecompanion || true
-          adb shell am start -W -n com.kow565.perchancecompanion/.SafeMainActivity
+          adb shell am force-stop com.kow565.harincompanion || true
+          adb shell am start -W -n com.kow565.harincompanion/com.kow565.perchancecompanion.SafeMainActivity
           sleep 6
-          if ! adb shell pidof com.kow565.perchancecompanion | grep -q '[0-9]'; then
+          if ! adb shell pidof com.kow565.harincompanion | grep -q '[0-9]'; then
             echo 'App process exited after launch.'
-            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|perchancecompanion|Process: com.kow565.perchancecompanion' || true
+            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|harincompanion|perchancecompanion|Process: com.kow565.harincompanion' || true
             exit 1
           fi
           adb shell uiautomator dump /sdcard/harin-window.xml >/dev/null 2>&1 || true
           if adb shell cat /sdcard/harin-window.xml 2>/dev/null | grep -q 'Harin 복구 모드'; then
             echo 'App launched into recovery mode instead of the normal chat screen.'
             adb shell cat /sdcard/harin-window.xml || true
-            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|perchancecompanion|Process: com.kow565.perchancecompanion' || true
+            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|harincompanion|perchancecompanion|Process: com.kow565.harincompanion' || true
             exit 1
           fi
-          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|com.kow565.perchancecompanion' | head -30 || true
+          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|com.kow565.harincompanion|com.kow565.perchancecompanion' | head -30 || true
