@@ -42,11 +42,11 @@ public class CompanionJobService extends JobService {
         CompanionStore store = new CompanionStore(this);
         AiEngine engine = new AiEngine();
         long now = System.currentTimeMillis();
-        if (store.nextContactAt() == 0L) store.setNextContactAt(now + minutes(45 + random.nextInt(90)));
-        if (store.nextStoryAt() == 0L) store.setNextStoryAt(now + minutes(120 + random.nextInt(240)));
+        if (store.nextContactAt() == 0L) store.setNextContactAt(now + randomDelay(store.contactMinMinutes(), store.contactMaxMinutes()));
+        if (store.nextStoryAt() == 0L) store.setNextStoryAt(now + randomDelay(store.storyMinMinutes(), store.storyMaxMinutes()));
 
         int hour = LocalTime.now().getHour();
-        boolean quiet = hour >= 1 && hour < 8;
+        boolean quiet = isQuietHour(hour, store.quietStartHour(), store.quietEndHour());
 
         if (!quiet && now >= store.nextContactAt()) {
             try {
@@ -62,7 +62,7 @@ public class CompanionJobService extends JobService {
                 store.bumpAiTurn(!image.isEmpty());
                 notifyUser(store.aiName(), t.reply);
             } catch (Exception ignored) {}
-            store.setNextContactAt(now + minutes(55 + random.nextInt(190)));
+            store.setNextContactAt(now + randomDelay(store.contactMinMinutes(), store.contactMaxMinutes()));
         }
 
         if (!quiet && now >= store.nextStoryAt()) {
@@ -73,11 +73,22 @@ public class CompanionJobService extends JobService {
                 store.addStory(st.caption, image);
                 notifyUser(store.aiName(), "새 스토리를 올렸어");
             } catch (Exception ignored) {}
-            store.setNextStoryAt(now + minutes(300 + random.nextInt(540)));
+            store.setNextStoryAt(now + randomDelay(store.storyMinMinutes(), store.storyMaxMinutes()));
         }
     }
 
-    private long minutes(int m) { return m * 60L * 1000L; }
+    private long randomDelay(int minMinutes, int maxMinutes) {
+        int lo = Math.max(1, minMinutes);
+        int hi = Math.max(lo, maxMinutes);
+        int selected = lo + (hi == lo ? 0 : random.nextInt(hi - lo + 1));
+        return selected * 60L * 1000L;
+    }
+
+    private boolean isQuietHour(int hour, int start, int end) {
+        if (start == end) return false;
+        if (start < end) return hour >= start && hour < end;
+        return hour >= start || hour < end;
+    }
 
     private void notifyUser(String title, String text) {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
