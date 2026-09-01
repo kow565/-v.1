@@ -1,0 +1,30 @@
+name: Build Android APK Fixed 5
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Apply final build fixes
+        run: |
+          cp build.gradle.agp9-fixed.kts build.gradle.kts
+          cp app/build.gradle.agp9-fixed.kts app/build.gradle.kts
+          sed -i 's/compileSdk = 36/compileSdk = 37/' app/build.gradle.kts
+          sed -i 's/ids.takeLast(500)/ids.toList().takeLast(500)/' app/src/main/java/com/ojun/klaswatch/AppPrefs.kt
+      - name: Build debug APK
+        run: gradle :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KLASWatch-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
