@@ -8,12 +8,27 @@ android {
     namespace = "com.ojun.klaswatch"
     compileSdk = 36
 
+    signingConfigs {
+        create("klaswatchStable") {
+            storeFile = rootProject.file("signing/klaswatch-dev.jks")
+            storePassword = "_cT80CGwAAhR-W5vseE5ZKESXQHthPgA"
+            keyAlias = "klaswatch"
+            keyPassword = "_cT80CGwAAhR-W5vseE5ZKESXQHthPgA"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.ojun.klaswatch"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("klaswatchStable")
+        }
     }
 
     buildFeatures {
