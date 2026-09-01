@@ -8,11 +8,16 @@ object AutoDiscovery {
     private data class Link(val text: String, val url: String)
 
     private val relevantWords = listOf(
-        "공지", "알림", "과제", "시험", "퀴즈", "휴강", "보강", "준비물", "강의자료",
-        "notice", "board", "announce", "assignment", "exam", "quiz", "task"
+        "공지", "알림", "과제", "시험", "퀴즈", "휴강", "보강", "준비물",
+        "강의자료", "수업자료", "학습자료", "온라인강의", "강의영상", "강의동영상",
+        "녹화강의", "녹화영상", "학습콘텐츠", "강의콘텐츠", "수업콘텐츠", "콘텐츠",
+        "동영상", "영상강의", "차시", "주차학습", "학습하기",
+        "notice", "board", "announce", "assignment", "exam", "quiz", "task",
+        "lecture", "video", "content", "material", "learning"
     )
     private val courseWords = listOf(
-        "과목", "강의", "수업", "교과목", "강좌", "학습", "course", "lecture", "subject", "class"
+        "과목", "강의", "수업", "교과목", "강좌", "학습", "강의실", "온라인강의",
+        "course", "lecture", "subject", "class", "learning"
     )
 
     fun discover(seedUrl: String, cookie: String): List<MonitorTarget> {
@@ -21,7 +26,7 @@ object AutoDiscovery {
         val firstLinks = links(seed.body(), seed.url().toString())
 
         val direct = firstLinks.filter { isRelevant(it) }
-        val coursePages = firstLinks.filter { isCourseish(it) && !isRelevant(it) }.take(24)
+        val coursePages = firstLinks.filter { isCourseish(it) && !isRelevant(it) }.take(32)
 
         val nested = mutableListOf<Link>()
         coursePages.forEach { link ->
@@ -32,19 +37,19 @@ object AutoDiscovery {
         val all = (direct + nested)
             .filter { sameKlasHost(it.url) }
             .distinctBy { normalize(it.url) }
-            .take(70)
+            .take(100)
 
         val targets = all.map { link ->
             MonitorTarget(
                 id = "auto_" + stableId(normalize(link.url)),
                 name = "[자동] " + link.text.ifBlank { inferName(link.url) }.take(80),
                 url = link.url,
-                itemSelector = "tr, li, .list, .board, .notice, .row, .item",
+                itemSelector = "tr, li, .list, .board, .notice, .row, .item, .content, .lecture, .learning, .week, .week-item",
                 titleSelector = "a"
             )
         }.toMutableList()
 
-        // KLAS 메인 화면에 최근 공지가 모여 있는 경우를 놓치지 않도록 seed도 fallback으로 감시.
+        // KLAS 메인 화면에 최근 공지/학습 항목이 모여 있는 경우를 놓치지 않도록 seed도 fallback으로 감시.
         if (targets.none { normalize(it.url) == normalize(seed.url().toString()) }) {
             targets.add(
                 0,
@@ -52,12 +57,12 @@ object AutoDiscovery {
                     id = "auto_" + stableId(normalize(seed.url().toString())),
                     name = "[자동] KLAS 통합 화면",
                     url = seed.url().toString(),
-                    itemSelector = "tr, li, .list, .board, .notice, .row, .item",
+                    itemSelector = "tr, li, .list, .board, .notice, .row, .item, .content, .lecture, .learning, .week, .week-item",
                     titleSelector = "a"
                 )
             )
         }
-        return targets.distinctBy { normalize(it.url) }.take(70)
+        return targets.distinctBy { normalize(it.url) }.take(100)
     }
 
     private fun fetch(url: String, cookie: String): org.jsoup.Connection.Response? = runCatching {
@@ -101,6 +106,7 @@ object AutoDiscovery {
     private fun normalize(url: String): String = url.substringBefore('#').trimEnd('/')
 
     private fun inferName(url: String): String = when {
+        listOf("lecture", "video", "content", "learning", "material").any { url.contains(it, true) } -> "강의/학습 콘텐츠"
         url.contains("notice", true) || url.contains("board", true) -> "공지"
         url.contains("assign", true) || url.contains("task", true) -> "과제"
         url.contains("exam", true) || url.contains("quiz", true) -> "시험"
