@@ -26,7 +26,9 @@ object NoticeParser {
             val date = dateRegex.find(rowText)?.value ?: ""
             val classHint = (container.className() + " " + container.id()).lowercase()
             val looksLikeRow = container.tagName() == "tr" || container.tagName() == "li" ||
-                classHint.contains("notice") || classHint.contains("board") || classHint.contains("list") || classHint.contains("row")
+                classHint.contains("notice") || classHint.contains("board") || classHint.contains("list") ||
+                classHint.contains("row") || classHint.contains("lecture") || classHint.contains("learning") ||
+                classHint.contains("content") || classHint.contains("week") || classHint.contains("item")
             if (!looksLikeRow && date.isBlank()) return
 
             val id = stableId(absolute.ifBlank { "$title|$date" })
@@ -40,7 +42,7 @@ object NoticeParser {
             doc.select("a[href]").forEach { a -> acceptAnchor(a, a.parent() ?: a) }
         }
 
-        return candidates.values.take(100)
+        return candidates.values.take(150)
     }
 
     fun extractDetail(html: String, baseUrl: String): String {
@@ -48,7 +50,8 @@ object NoticeParser {
         doc.select("script, style, nav, header, footer, noscript, form").remove()
         val selectors = listOf(
             "article", "main", ".board_view", ".board-view", ".view_content", ".view-content",
-            ".notice_view", ".notice-view", ".content", ".contents", "#content", "#contents"
+            ".notice_view", ".notice-view", ".content", ".contents", ".lecture", ".learning",
+            ".week", ".week-item", "#content", "#contents"
         )
         val blocks = selectors.flatMap { doc.select(it) }.distinct()
         val best = blocks.maxByOrNull { it.text().length }
@@ -62,6 +65,10 @@ object NoticeParser {
             listOf("휴강", "보강", "강의 취소").any { t.contains(it) } -> "휴강/보강"
             listOf("시험", "중간고사", "기말고사", "퀴즈", "고사").any { t.contains(it) } -> "시험"
             listOf("과제", "제출", "레포트", "보고서", "assignment").any { t.contains(it) } -> "과제"
+            listOf("강의자료", "수업자료", "학습자료", "온라인강의", "강의영상", "강의동영상",
+                "녹화강의", "녹화영상", "학습콘텐츠", "강의콘텐츠", "수업콘텐츠", "동영상",
+                "영상강의", "차시", "주차학습", "학습하기", "lecture", "video", "content", "material"
+            ).any { t.contains(it) } -> "강의"
             listOf("준비물", "교재", "지참").any { t.contains(it) } -> "준비물"
             listOf("마감", "기한", "deadline").any { t.contains(it) } -> "마감"
             else -> "공지"
