@@ -38,19 +38,30 @@ jobs:
         run: |
           mkdir -p ai-companion/dist
           cp ai-companion/app/build/outputs/apk/debug/app-debug.apk "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Harin-v${{ env.VERSION_NAME }}-debug-apk
+          path: ai-companion/dist/Harin-v${{ env.VERSION_NAME }}-debug.apk
       - name: Install emulator image
         run: yes | sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64' > /dev/null
       - name: Launch smoke test
+        timeout-minutes: 5
         shell: bash
         run: |
           set -euo pipefail
           echo no | avdmanager create avd -n harin_ci -k 'system-images;android-35;google_apis;x86_64' --force
           "$ANDROID_HOME/emulator/emulator" -avd harin_ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > /tmp/harin-emulator.log 2>&1 &
           adb wait-for-device
+          BOOTED=0
           for i in $(seq 1 120); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then break; fi
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then BOOTED=1; break; fi
             sleep 1
           done
+          if [ "$BOOTED" != "1" ]; then
+            echo 'Emulator did not finish booting.'
+            tail -80 /tmp/harin-emulator.log || true
+            exit 1
+          fi
           adb install -r "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
           adb logcat -c
           adb shell am force-stop com.kow565.perchancecompanion || true
@@ -61,8 +72,11 @@ jobs:
             adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|perchancecompanion|Process: com.kow565.perchancecompanion' || true
             exit 1
           fi
+          adb shell uiautomator dump /sdcard/harin-window.xml >/dev/null 2>&1 || true
+          if adb shell cat /sdcard/harin-window.xml 2>/dev/null | grep -q 'Harin 복구 모드'; then
+            echo 'App launched into recovery mode instead of the normal chat screen.'
+            adb shell cat /sdcard/harin-window.xml || true
+            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|perchancecompanion|Process: com.kow565.perchancecompanion' || true
+            exit 1
+          fi
           adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|com.kow565.perchancecompanion' | head -30 || true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Harin-v${{ env.VERSION_NAME }}-debug-apk
-          path: ai-companion/dist/Harin-v${{ env.VERSION_NAME }}-debug.apk
