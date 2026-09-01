@@ -38,6 +38,8 @@ gradle :app:assembleDebug
 
 결과: `app/build/outputs/apk/debug/app-debug.apk`
 
+CI 검증 브랜치: `ai-companion-v1`
+
 ## 주의
 
 Perchance 서비스에 과도한 요청을 보내지 않도록 자동 이미지/스토리 빈도를 낮게 설정했습니다. 백그라운드 실행 시 Android 제조사별 절전 정책 때문에 실행 시점이 약간 늦어질 수 있습니다.
