@@ -14,10 +14,31 @@ import java.util.Locale
 
 class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val targets = AppPrefs.targets(applicationContext)
+        val seedUrl = AppPrefs.autoSeedUrl(applicationContext)
+        var targets = AppPrefs.targets(applicationContext)
+
+        if (seedUrl.isNotBlank()) {
+            val nowMs = System.currentTimeMillis()
+            val hasAuto = targets.any { it.name.startsWith("[자동]") }
+            val discoveryOld = nowMs - AppPrefs.lastDiscovery(applicationContext) > 12L * 60L * 60L * 1000L
+            if (!hasAuto || discoveryOld) {
+                val cookie = CookieManager.getInstance().getCookie(seedUrl).orEmpty()
+                val discovered = AutoDiscovery.discover(seedUrl, cookie)
+                if (discovered.isNotEmpty()) {
+                    AppPrefs.replaceAutoTargets(applicationContext, discovered)
+                    AppPrefs.markDiscovery(applicationContext)
+                    targets = AppPrefs.targets(applicationContext)
+                }
+            }
+        }
+
         if (targets.isEmpty()) {
-            AppPrefs.setLastStatus(applicationContext, "감시 대상이 없습니다. 앱에서 KLAS 공지 페이지를 추가하세요.")
-            return@withContext Result.success()
+            AppPrefs.setLastStatus(
+                applicationContext,
+                if (seedUrl.isBlank()) "KLAS 로그인 대기 중입니다. 앱에서 한 번 로그인하세요."
+                else "로그인은 확인됐지만 자동 감시 페이지를 아직 찾지 못했습니다. 잠시 뒤 다시 시도합니다."
+            )
+            return@withContext Result.retry()
         }
 
         var newCount = 0
@@ -36,7 +57,7 @@ class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWo
 
                 val items = NoticeParser.parseList(html, target.url, target)
                 if (items.isEmpty()) {
-                    errors += "${target.name}: 공지 항목 0개(페이지 구조 확인 필요)"
+                    errors += "${target.name}: 항목 0개"
                     return@forEach
                 }
                 okCount++
@@ -63,9 +84,10 @@ class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWo
         }
 
         val now = SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date())
+        val autoCount = targets.count { it.name.startsWith("[자동]") }
         val status = buildString {
-            append("$now 검사 완료 · 정상 $okCount/${targets.size} · 새 공지 ${newCount}건")
-            if (errors.isNotEmpty()) append("\n" + errors.joinToString(" / "))
+            append("$now 자동 검사 완료 · 감시 $autoCount개 · 정상 $okCount/${targets.size} · 새 공지 ${newCount}건")
+            if (errors.isNotEmpty()) append("\n" + errors.take(5).joinToString(" / "))
         }
         AppPrefs.setLastStatus(applicationContext, status)
         if (okCount == 0 && errors.isNotEmpty()) Result.retry() else Result.success()
