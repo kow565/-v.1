@@ -54,7 +54,7 @@ jobs:
           adb install -r "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
           adb logcat -c
           adb shell am force-stop com.kow565.perchancecompanion || true
-          adb shell am start -W -n com.kow565.perchancecompanion/.MainActivity
+          adb shell am start -W -n com.kow565.perchancecompanion/.SafeMainActivity
           sleep 6
           if ! adb shell pidof com.kow565.perchancecompanion | grep -q '[0-9]'; then
             echo 'App process exited after launch.'
