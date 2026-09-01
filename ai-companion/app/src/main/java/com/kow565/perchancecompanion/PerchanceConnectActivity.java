@@ -16,10 +16,13 @@ import android.widget.TextView;
 
 import org.json.JSONTokener;
 
+import java.net.URL;
+import java.util.List;
+
 public class PerchanceConnectActivity extends Activity {
-    private static final String LANDING = "https://perchance.org/ai-text-plugin-tester";
+    private static final String TEXT_LANDING = "https://perchance.org/ai-text-plugin-tester";
     private static final String TEXT_VERIFY = "https://text-generation.perchance.org/api/verifyUser?thread=0&__cacheBust=";
-    private static final String IMAGE_VERIFY = "https://image-generation.perchance.org/api/verifyUser?thread=0&__cacheBust=";
+    private static final String IMAGE_PAGE = "https://perchance.org/ai-text-to-image-generator";
 
     private WebView web;
     private TextView status;
@@ -88,57 +91,141 @@ public class PerchanceConnectActivity extends Activity {
         imageOk = false;
         stage = 0;
         PerchanceSession.clear(this);
-        status.setText("Perchance 페이지를 여는 중…");
-        web.loadUrl(LANDING + "?harinConnect=" + System.currentTimeMillis());
+        status.setText("Perchance 텍스트 페이지를 여는 중…");
+        web.loadUrl(TEXT_LANDING + "?harinConnect=" + System.currentTimeMillis());
     }
 
     private void handleLoaded(String url) {
         if (stage == 0 && url.startsWith("https://perchance.org/")) {
             stage = 1;
             status.setText("텍스트 생성 세션을 확인하는 중…");
-            web.postDelayed(() -> web.loadUrl(TEXT_VERIFY + Math.random()), 700);
+            web.postDelayed(() -> web.loadUrl(TEXT_VERIFY + Math.random()), 600);
             return;
         }
         if (stage == 1 && url.startsWith("https://text-generation.perchance.org/")) {
-            readCurrentPage("text", "https://text-generation.perchance.org", ok -> {
+            readTextPage(ok -> {
                 textOk = ok;
-                stage = 2;
-                status.setText(ok ? "텍스트 연결 완료 · 이미지 세션 확인 중…" : "텍스트 키를 읽지 못했어. 이미지 연결도 확인하는 중…");
-                web.loadUrl(IMAGE_VERIFY + Math.random());
+                status.setText(ok ? "텍스트 연결 완료 · 이미지 키를 자동 확인하는 중…" : "텍스트 키를 읽지 못했어 · 이미지 연결은 계속 확인할게…");
+                tryAutomaticImageKey();
             });
             return;
         }
-        if (stage == 2 && url.startsWith("https://image-generation.perchance.org/")) {
-            readCurrentPage("image", "https://image-generation.perchance.org", ok -> {
-                imageOk = ok;
-                stage = 3;
-                if (textOk && imageOk) status.setText("연결 완료 ✓ 이제 모든 DM과 이미지 생성에서 이 세션을 사용해.");
-                else status.setText("연결이 완전히 되지 않았어. 아래 '다시 연결'을 한 번 눌러줘. Perchance 페이지가 보이면 그대로 두면 돼.");
-            });
+        if (stage == 2 && url.startsWith("https://perchance.org/")) {
+            // Current Perchance image key lives in the image generator's embedded panel rather than /api/verifyUser.
+            web.postDelayed(this::openImageIframeFromPage, 900);
+            return;
+        }
+        if (stage == 3) {
+            web.postDelayed(this::readImagePanel, 700);
         }
     }
 
-    private void readCurrentPage(String kind, String cookieUrl, ValueCallback<Boolean> callback) {
+    private void tryAutomaticImageKey() {
+        stage = -1;
+        new Thread(() -> {
+            try {
+                String key = PerchanceClient.refreshImageKey(this);
+                imageOk = key != null && !key.isEmpty();
+            } catch (Exception ignored) {
+                imageOk = false;
+            }
+            runOnUiThread(() -> {
+                if (imageOk) {
+                    stage = 4;
+                    finishStatus();
+                } else {
+                    stage = 2;
+                    status.setText("이미지 생성기 페이지에서 현재 키를 찾는 중…");
+                    web.loadUrl(IMAGE_PAGE + "?harinConnect=" + System.currentTimeMillis());
+                }
+            });
+        }, "perchance-image-key").start();
+    }
+
+    private void openImageIframeFromPage() {
+        String js = "(function(){var f=document.querySelector('iframe#main')||document.querySelector('iframe[src*=\\\"ai-image-generator-panel\\\"]');return f?f.src:'';})()";
+        web.evaluateJavascript(js, value -> {
+            String src = decodeJsString(value).trim();
+            if (src.isEmpty()) {
+                // Some page versions embed the key in the top page itself.
+                readImagePanel();
+                return;
+            }
+            try {
+                stage = 3;
+                web.loadUrl(new URL(new URL(IMAGE_PAGE), src).toString());
+            } catch (Exception e) {
+                status.setText("이미지 패널 주소를 열지 못했어. 다시 연결을 눌러줘.");
+            }
+        });
+    }
+
+    private void readImagePanel() {
+        web.evaluateJavascript("(function(){return document.documentElement ? document.documentElement.outerHTML : '';})()", value -> {
+            String html = decodeJsString(value);
+            List<String> candidates = PerchanceSession.parseUserKeys(html);
+            if (candidates.isEmpty()) {
+                web.evaluateJavascript("(function(){return document.documentElement ? document.documentElement.innerText : '';})()", textValue -> {
+                    verifyImageCandidates(PerchanceSession.parseUserKeys(decodeJsString(textValue)));
+                });
+            } else {
+                verifyImageCandidates(candidates);
+            }
+        });
+    }
+
+    private void verifyImageCandidates(List<String> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            status.setText("이미지 키를 찾지 못했어. 페이지가 완전히 뜬 뒤 ‘다시 연결’을 눌러줘.");
+            return;
+        }
+        status.setText("이미지 키를 검증하는 중…");
+        new Thread(() -> {
+            String found = "";
+            for (String candidate : candidates) {
+                if (PerchanceClient.verifyImageKey(this, candidate)) {
+                    found = candidate;
+                    break;
+                }
+            }
+            final String valid = found;
+            if (!valid.isEmpty()) {
+                String cookie = CookieManager.getInstance().getCookie("https://perchance.org");
+                PerchanceSession.save(this, "image", valid, cookie);
+                imageOk = true;
+            }
+            runOnUiThread(() -> {
+                stage = 4;
+                finishStatus();
+            });
+        }, "perchance-image-verify").start();
+    }
+
+    private void readTextPage(ValueCallback<Boolean> callback) {
         web.evaluateJavascript("(function(){return document.documentElement ? document.documentElement.innerText : document.body.innerText;})()", value -> {
             String text = decodeJsString(value);
             String key = PerchanceSession.parseUserKey(text);
             if (key.isEmpty()) {
-                // Some responses are rendered as preformatted HTML; try the raw HTML too.
                 web.evaluateJavascript("(function(){return document.documentElement ? document.documentElement.outerHTML : '';})()", htmlValue -> {
-                    String html = decodeJsString(htmlValue);
-                    String htmlKey = PerchanceSession.parseUserKey(html);
+                    String htmlKey = PerchanceSession.parseUserKey(decodeJsString(htmlValue));
                     if (!htmlKey.isEmpty()) {
-                        String cookie = CookieManager.getInstance().getCookie(cookieUrl);
-                        PerchanceSession.save(this, kind, htmlKey, cookie);
+                        String cookie = CookieManager.getInstance().getCookie("https://text-generation.perchance.org");
+                        PerchanceSession.save(this, "text", htmlKey, cookie);
                         callback.onReceiveValue(true);
                     } else callback.onReceiveValue(false);
                 });
             } else {
-                String cookie = CookieManager.getInstance().getCookie(cookieUrl);
-                PerchanceSession.save(this, kind, key, cookie);
+                String cookie = CookieManager.getInstance().getCookie("https://text-generation.perchance.org");
+                PerchanceSession.save(this, "text", key, cookie);
                 callback.onReceiveValue(true);
             }
         });
+    }
+
+    private void finishStatus() {
+        if (textOk && imageOk) status.setText("연결 완료 ✓ 텍스트와 이미지 생성 준비가 끝났어.");
+        else if (imageOk) status.setText("이미지 연결 완료 ✓ 텍스트 연결만 다시 확인해줘.");
+        else status.setText("이미지 연결에 실패했어. 페이지가 보이는 상태에서 ‘다시 연결’을 눌러줘.");
     }
 
     private String decodeJsString(String value) {
