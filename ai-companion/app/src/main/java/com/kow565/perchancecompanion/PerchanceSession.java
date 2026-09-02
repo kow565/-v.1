@@ -41,7 +41,14 @@ public final class PerchanceSession {
 
     public static boolean hasText(Context context) { return !key(context, "text").isEmpty(); }
     public static boolean hasImage(Context context) { return !key(context, "image").isEmpty(); }
-    public static boolean isReady(Context context) { return hasText(context) && hasImage(context); }
+
+    public static boolean isReady(Context context) {
+        // v0.4 primary connectivity is the imported plugin runtime, not cached userKey values.
+        try {
+            if (PerchanceBrowserTransport.statusSummary().contains("플러그인 ✓")) return true;
+        } catch (Throwable ignored) {}
+        return hasText(context) && hasImage(context); // legacy/direct fallback status only
+    }
 
     public static void clearKind(Context context, String kind) {
         context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -70,7 +77,6 @@ public final class PerchanceSession {
         Matcher m = KEY64.matcher(normalized);
         while (m.find()) addUnique(out, m.group(1));
 
-        // Fallback for JSON responses whose key is not exactly 64 chars.
         String needle = "\"userKey\"";
         int i = normalized.indexOf(needle);
         if (i >= 0) {
