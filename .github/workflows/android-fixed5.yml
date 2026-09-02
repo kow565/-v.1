@@ -28,3 +28,4 @@ jobs:
         with:
           name: KLASWatch-v0.5-stable-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
