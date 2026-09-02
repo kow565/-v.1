@@ -43,11 +43,11 @@ public final class PerchanceSession {
     public static boolean hasImage(Context context) { return !key(context, "image").isEmpty(); }
 
     public static boolean isReady(Context context) {
-        // v0.4 primary connectivity is the imported plugin runtime, not cached userKey values.
+        // v0.4.1 connectivity is only the official imported-plugin runtime.
         try {
             if (PerchanceBrowserTransport.statusSummary().contains("플러그인 ✓")) return true;
         } catch (Throwable ignored) {}
-        return hasText(context) && hasImage(context); // legacy/direct fallback status only
+        return false;
     }
 
     public static void clearKind(Context context, String kind) {

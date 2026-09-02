@@ -32,43 +32,17 @@ public final class PerchanceClient {
     private PerchanceClient() {}
 
     public static String generateText(Context context, String prompt) throws Exception {
-        Exception pluginFailure = null;
-        if (PerchanceBrowserTransport.isAvailable()) {
-            try {
-                return PerchanceBrowserTransport.generateText(prompt);
-            } catch (Exception e) {
-                pluginFailure = e;
-            }
-        }
-
-        // Background work has no Activity/WebView. Keep the old protocol only as a best-effort
-        // fallback; foreground generation should normally never need this path.
-        try {
-            return generateTextDirect(context, prompt);
-        } catch (Exception directFailure) {
-            if (pluginFailure != null) throw combined("텍스트", pluginFailure, directFailure);
-            throw directFailure;
-        }
+        if (!PerchanceBrowserTransport.isAvailable())
+            throw new IllegalStateException("Perchance 공식 플러그인을 실행할 앱 화면이 필요해");
+        return PerchanceBrowserTransport.generateText(prompt);
     }
 
     public static String generateImage(Context context, String prompt, String negativePrompt,
                                        int seed, String folder, String prefix) throws Exception {
-        Exception pluginFailure = null;
-        if (PerchanceBrowserTransport.isAvailable()) {
-            try {
-                String dataUrl = PerchanceBrowserTransport.generateImageDataUrl(prompt, negativePrompt, seed);
-                return saveDataUrl(context, dataUrl, folder, prefix);
-            } catch (Exception e) {
-                pluginFailure = e;
-            }
-        }
-
-        try {
-            return generateImageDirect(context, prompt, negativePrompt, seed, folder, prefix);
-        } catch (Exception directFailure) {
-            if (pluginFailure != null) throw combined("이미지", pluginFailure, directFailure);
-            throw directFailure;
-        }
+        if (!PerchanceBrowserTransport.isAvailable())
+            throw new IllegalStateException("Perchance 공식 플러그인을 실행할 앱 화면이 필요해");
+        String dataUrl = PerchanceBrowserTransport.generateImageDataUrl(prompt, negativePrompt, seed);
+        return saveDataUrl(context, dataUrl, folder, prefix);
     }
 
     public static String savePluginImageForTest(Context context, String dataUrl) throws Exception {

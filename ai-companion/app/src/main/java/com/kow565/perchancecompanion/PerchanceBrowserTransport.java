@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
  * embeds and server protocol.
  */
 public final class PerchanceBrowserTransport {
-    private static final String HOST_PAGE = "https://perchance.org/ai-character-chat";
+    private static final String HOST_PAGE = "https://perchance.org/87fjsh5tkf";
     private static final Object TEXT_LOCK = new Object();
     private static final Object IMAGE_LOCK = new Object();
     private static final ConcurrentHashMap<String, Pending> PENDING = new ConcurrentHashMap<>();
@@ -121,47 +121,26 @@ public final class PerchanceBrowserTransport {
     private static String runTextOnce(String prompt) throws Exception {
         Activity a = requireActivity();
         String id = UUID.randomUUID().toString();
-        String script = "(async()=>{const RID=" + JSONObject.quote(id) + ";" +
-                "const ok=(s)=>HarinNative.ok(RID,btoa(unescape(encodeURIComponent(String(s)))));" +
-                "const fail=(s)=>HarinNative.fail(RID,'text',String(s));" +
-                "try{" +
-                "const fn=(window.root&&typeof root.aiTextPlugin==='function'?root.aiTextPlugin:(typeof window.aiTextPlugin==='function'?window.aiTextPlugin:null));" +
-                "if(!fn)throw new Error('root.aiTextPlugin is not available');" +
-                "let streamed='';let lastFull='';" +
-                "const job=fn({instruction:" + JSONObject.quote(prompt) + ",startWith:'',stopSequences:[],onChunk:(d)=>{" +
-                "try{if(d&&typeof d.fullTextSoFar==='string')lastFull=d.fullTextSoFar;if(d&&typeof d.textChunk==='string'&&!d.isFromStartWith)streamed+=d.textChunk;}catch(_){}}});" +
-                "let data=null;" +
-                "if(job&&job.onFinishPromise&&typeof job.onFinishPromise.then==='function'){data=await job.onFinishPromise;}" +
-                "else if(job&&typeof job.then==='function'){data=await job;}" +
-                "else{data=job;}" +
-                "let out=lastFull||streamed;" +
-                "if(!out&&typeof data==='string')out=data;" +
-                "else if(!out&&data&&typeof data==='object'){out=data.text||data.completion||data.fullText||data.fullTextSoFar||data.output||data.result||'';}" +
-                "if(!out&&job&&typeof job==='object'){out=job.text||job.completion||job.fullText||job.fullTextSoFar||'';}" +
-                "if(!String(out).trim())throw new Error('aiTextPlugin finished without text; jobKeys='+(job&&typeof job==='object'?Object.keys(job).join(',') : typeof job));" +
-                "ok(out);" +
-                "}catch(e){fail(e&&e.stack?e.stack:(e&&e.message?e.message:e));}})();";
+        JSONObject request = new JSONObject();
+        request.put("id", id);
+        request.put("prompt", prompt);
+        String script = "(()=>{const b=document.querySelector('#harinTextBridgeButton');" +
+                "if(!b){HarinNative.fail(" + JSONObject.quote(id) + ",'text','bridge button missing');return;}" +
+                "b.dataset.request=encodeURIComponent(" + JSONObject.quote(request.toString()) + ");b.click();})()";
         return execute(a, id, script, "text", 100000);
     }
 
     private static String runImageOnce(String prompt, String negativePrompt, int seed) throws Exception {
         Activity a = requireActivity();
         String id = UUID.randomUUID().toString();
-        String script = "(async()=>{const RID=" + JSONObject.quote(id) + ";" +
-                "const ok=(s)=>HarinNative.okRaw(RID,String(s));" +
-                "const fail=(s)=>HarinNative.fail(RID,'image',String(s));" +
-                "try{" +
-                "const fn=(window.root&&typeof root.textToImagePlugin==='function'?root.textToImagePlugin:(typeof window.textToImagePlugin==='function'?window.textToImagePlugin:null));" +
-                "if(!fn)throw new Error('root.textToImagePlugin is not available');" +
-                "const job=fn({prompt:" + JSONObject.quote(prompt) + ",negativePrompt:" + JSONObject.quote(negativePrompt) + ",resolution:'512x768',seed:" + seed + ",guidanceScale:7});" +
-                "const data=await Promise.resolve(job);" +
-                "let url='';if(typeof data==='string'&&data.startsWith('data:image/'))url=data;" +
-                "else if(data&&typeof data==='object'){url=data.dataUrl||data.dataURL||data.url||((data.output&&data.output.dataUrl)||'');}" +
-                "if(!url&&job&&typeof job==='object'){url=job.dataUrl||job.dataURL||'';}" +
-                "if(!url)throw new Error('textToImagePlugin returned no dataUrl; keys='+(data&&typeof data==='object'?Object.keys(data).join(',') : typeof data));" +
-                "if(!String(url).startsWith('data:image/'))throw new Error('image result is not a data URL: '+String(url).slice(0,80));" +
-                "ok(url);" +
-                "}catch(e){fail(e&&e.stack?e.stack:(e&&e.message?e.message:e));}})();";
+        JSONObject request = new JSONObject();
+        request.put("id", id);
+        request.put("prompt", prompt);
+        request.put("negativePrompt", negativePrompt);
+        request.put("seed", seed);
+        String script = "(()=>{const b=document.querySelector('#harinImageBridgeButton');" +
+                "if(!b){HarinNative.fail(" + JSONObject.quote(id) + ",'image','bridge button missing');return;}" +
+                "b.dataset.request=encodeURIComponent(" + JSONObject.quote(request.toString()) + ");b.click();})()";
         return execute(a, id, script, "image", 180000);
     }
 
@@ -220,7 +199,7 @@ public final class PerchanceBrowserTransport {
         sessionActivity = activity;
         runtimeReady = false;
         runtimeUrl = "";
-        lastDiagnostic = "AI Character Chat 로딩";
+        lastDiagnostic = "Harin 공식 플러그인 bridge 로딩";
         final int epoch = ++generationEpoch;
         try {
             runtimeWeb = createWeb(activity, epoch);
@@ -250,7 +229,7 @@ public final class PerchanceBrowserTransport {
                 super.onPageFinished(view, url);
                 if (epoch != generationEpoch || view != runtimeWeb) return;
                 if (url == null) return;
-                if (url.startsWith("https://perchance.org/ai-character-chat")) {
+                if (url.startsWith(HOST_PAGE)) {
                     lastDiagnostic = "generator iframe 찾는 중";
                     discoverGeneratorIframe(view, epoch, 0);
                 } else if (url.startsWith("https://") && url.contains(".perchance.org/")) {
@@ -269,7 +248,7 @@ public final class PerchanceBrowserTransport {
     private static void discoverGeneratorIframe(WebView web, int epoch, int attempt) {
         if (web == null || epoch != generationEpoch || web != runtimeWeb) return;
         if (attempt > 100) {
-            lastDiagnostic = "AI Character Chat generator iframe을 찾지 못함";
+            lastDiagnostic = "Harin bridge generator iframe을 찾지 못함";
             return;
         }
         String js = "(()=>{const f=document.querySelector('#outputIframeEl')||document.querySelector('iframe[src*=\".perchance.org\"]');return f&&f.src?f.src:'';})()";
@@ -289,10 +268,10 @@ public final class PerchanceBrowserTransport {
     private static void probePlugins(WebView web, int epoch, int attempt) {
         if (web == null || epoch != generationEpoch || web != runtimeWeb) return;
         if (attempt > 150) {
-            lastDiagnostic = "generator는 열렸지만 aiTextPlugin/textToImagePlugin import가 준비되지 않음";
+            lastDiagnostic = "generator는 열렸지만 bridge 버튼이 준비되지 않음";
             return;
         }
-        String js = "(()=>{const r=window.root||{};return JSON.stringify({text:typeof r.aiTextPlugin==='function'||typeof window.aiTextPlugin==='function',image:typeof r.textToImagePlugin==='function'||typeof window.textToImagePlugin==='function',root:!!window.root,href:location.href});})()";
+        String js = "(()=>{const t=document.querySelector('#harinTextBridgeButton');const i=document.querySelector('#harinImageBridgeButton');return JSON.stringify({text:!!t,image:!!i,bridge:!!t&&!!i,version:'1',href:location.href});})()";
         web.evaluateJavascript(js, value -> {
             if (epoch != generationEpoch || web != runtimeWeb) return;
             String raw = decodeJsString(value);
@@ -301,7 +280,7 @@ public final class PerchanceBrowserTransport {
                 boolean text = o.optBoolean("text", false);
                 boolean image = o.optBoolean("image", false);
                 runtimeUrl = o.optString("href", runtimeUrl);
-                lastDiagnostic = "root=" + o.optBoolean("root", false) + " text=" + text + " image=" + image;
+                lastDiagnostic = "bridge=" + o.optBoolean("bridge", false) + " v=" + o.optString("version", "?") + " text=" + text + " image=" + image;
                 if (text && image) {
                     runtimeReady = true;
                     return;
@@ -358,6 +337,7 @@ public final class PerchanceBrowserTransport {
 
     private static final class Pending {
         final CountDownLatch latch = new CountDownLatch(1);
+        final StringBuilder imageBuffer = new StringBuilder();
         volatile String result;
         volatile String error;
     }
@@ -380,6 +360,18 @@ public final class PerchanceBrowserTransport {
             if (p == null) return;
             p.result = value;
             p.latch.countDown();
+        }
+
+        @JavascriptInterface public void imageChunk(String id, String value, boolean done) {
+            Pending p = PENDING.get(id);
+            if (p == null) return;
+            synchronized (p.imageBuffer) {
+                if (value != null) p.imageBuffer.append(value);
+                if (done) {
+                    p.result = p.imageBuffer.toString();
+                    p.latch.countDown();
+                }
+            }
         }
 
         @JavascriptInterface public void fail(String id, String kind, String message) {

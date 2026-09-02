@@ -62,7 +62,7 @@ public class PerchanceConnectActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView info = new TextView(this);
-        info.setText("v0.4는 Perchance 내부 API를 주 경로로 사용하지 않고, 실제 AI Character Chat generator 안에 import된 AI Text Plugin과 Text-to-Image Plugin을 호출해. 아래 원본 Perchance 화면은 브라우저 검증이나 쿠키 확인이 필요한 경우 직접 완료할 수 있게 보여주는 정상 브라우저 화면이야.");
+        info.setText("v0.4.1은 userKey나 내부 /api/generate를 사용하지 않아. Harin 전용 Perchance bridge가 공식 AI Text Plugin과 Text-to-Image Plugin을 import해. 아래 원본 화면은 브라우저 검증이 필요할 때 직접 완료할 수 있는 정상 Perchance 화면이야.");
         info.setTextSize(13);
         info.setTextColor(Color.DKGRAY);
         info.setPadding(0, dp(12), 0, dp(12));
@@ -137,7 +137,7 @@ public class PerchanceConnectActivity extends Activity {
     }
 
     private void testText() {
-        detail.setText("root.aiTextPlugin에 실제 요청을 보내고 스트리밍 결과를 수집하는 중…");
+        detail.setText("공식 AI Text Plugin에 실제 요청을 보내는 중…");
         new Thread(() -> {
             try {
                 String result = PerchanceBrowserTransport.generateText("Reply with exactly: OK");
@@ -149,7 +149,7 @@ public class PerchanceConnectActivity extends Activity {
     }
 
     private void testImage() {
-        detail.setText("root.textToImagePlugin에 실제 요청을 보내는 중…");
+        detail.setText("공식 Text-to-Image Plugin에 실제 요청을 보내는 중…");
         new Thread(() -> {
             try {
                 String dataUrl = PerchanceBrowserTransport.generateImageDataUrl(
