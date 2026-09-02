@@ -29,8 +29,8 @@ import java.util.concurrent.TimeUnit;
  */
 public final class PerchanceBrowserTransport {
     private static final String HOST_PAGE = "https://perchance.org/87fjsh5tkf";
-    private static final Object TEXT_LOCK = new Object();
-    private static final Object IMAGE_LOCK = new Object();
+    // Text and image requests both navigate the same generator iframe. They must never overlap.
+    private static final Object RUNTIME_LOCK = new Object();
     private static final ConcurrentHashMap<String, Pending> PENDING = new ConcurrentHashMap<>();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
@@ -95,7 +95,7 @@ public final class PerchanceBrowserTransport {
     public static String generateText(String prompt) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper())
             throw new IllegalStateException("Perchance plugin generation must run off the main thread");
-        synchronized (TEXT_LOCK) {
+        synchronized (RUNTIME_LOCK) {
             Exception last = null;
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {
@@ -113,7 +113,7 @@ public final class PerchanceBrowserTransport {
     public static String generateImageDataUrl(String prompt, String negativePrompt, int seed) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper())
             throw new IllegalStateException("Perchance plugin generation must run off the main thread");
-        synchronized (IMAGE_LOCK) {
+        synchronized (RUNTIME_LOCK) {
             Exception last = null;
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {

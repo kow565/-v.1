@@ -244,6 +244,23 @@ public class CompanionStore {
             if (m != null && messageId.equals(messageKey(m))) {
                 try {
                     m.put("image", imagePath);
+                    m.remove("imageStatus");
+                    prefs.edit().putString("messages", arr.toString()).apply();
+                } catch (Exception ignored) {}
+                return;
+            }
+        }
+    }
+
+    public synchronized void setMessageImageStatus(String messageKey, String status) {
+        if (messageKey == null || messageKey.isEmpty()) return;
+        JSONArray arr = messages();
+        for (int i = arr.length() - 1; i >= 0; i--) {
+            JSONObject m = arr.optJSONObject(i);
+            if (m != null && messageKey.equals(messageKey(m))) {
+                try {
+                    if (status == null || status.isEmpty()) m.remove("imageStatus");
+                    else m.put("imageStatus", status);
                     prefs.edit().putString("messages", arr.toString()).apply();
                 } catch (Exception ignored) {}
                 return;

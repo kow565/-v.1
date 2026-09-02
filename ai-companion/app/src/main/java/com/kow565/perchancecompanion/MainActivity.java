@@ -27,8 +27,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
+    private static final ExecutorService IMAGE_QUEUE = Executors.newSingleThreadExecutor();
     private CompanionStore store;
     private LinearLayout storyRow;
     private LinearLayout chatContainer;
@@ -229,6 +232,20 @@ public class MainActivity extends Activity {
         text.setTextColor(mine ? Color.WHITE : Color.BLACK);
         text.setPadding(dp(11), dp(8), dp(11), dp(8));
         bubble.addView(text, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        String imageStatus = m.optString("imageStatus", "");
+        if (imagePath.isEmpty() && !imageStatus.isEmpty()) {
+            TextView photoState = new TextView(this);
+            photoState.setText(imageStatus);
+            photoState.setTextSize(11);
+            photoState.setTextColor(mine ? Color.rgb(220, 238, 255) : Color.DKGRAY);
+            photoState.setPadding(dp(11), 0, dp(11), dp(8));
+            bubble.addView(photoState);
+            if (imageStatus.startsWith("사진 실패")) {
+                photoState.setText(imageStatus + " · 눌러서 재시도");
+                photoState.setOnClickListener(v -> queueMessageImage(
+                        CompanionStore.messageKey(m), m.optString("role"), m.optString("text"), "", false));
+            }
+        }
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         bp.width = Math.min(getResources().getDisplayMetrics().widthPixels * 4 / 5, dp(330));
         row.addView(bubble, bp);
@@ -256,14 +273,7 @@ public class MainActivity extends Activity {
                     String changed = editor.getText().toString().trim();
                     if (!store.updateMessageText(key, changed)) return;
                     renderMessages();
-                    new Thread(() -> {
-                        try {
-                            AiEngine engine = new AiEngine();
-                            String image = engine.generateMessageImage(this, store, "user", changed, "");
-                            store.setMessageImage(key, image);
-                            runOnUiThread(this::renderAll);
-                        } catch (Exception ignored) {}
-                    }, "harin-edited-message-image").start();
+                    queueMessageImage(key, "user", changed, "", false);
                 })
                 .show();
     }
@@ -274,6 +284,7 @@ public class MainActivity extends Activity {
         if (text.isEmpty()) return;
         input.setText("");
         String userMessageId = store.addMessageWithId("user", text, "");
+        store.setMessageImageStatus(userMessageId, "사진 대기 중…");
         busy = true;
         renderMessages();
 
@@ -283,27 +294,39 @@ public class MainActivity extends Activity {
                 AiEngine.Turn t = engine.chatTurn(store, text, false);
                 store.applyState(t.state);
                 String aiMessageId = store.addMessageWithId("ai", t.reply, "");
+                store.setMessageImageStatus(aiMessageId, "사진 대기 중…");
+                busy = false;
                 runOnUiThread(this::renderAll);
-
-                try {
-                    String userImage = engine.generateMessageImage(this, store, "user", text, "");
-                    store.setMessageImage(userMessageId, userImage);
-                    runOnUiThread(this::renderAll);
-                } catch (Exception ignored) {}
-
-                String aiImage = "";
-                try {
-                    aiImage = engine.generateMessageImage(this, store, "ai", t.reply, t.imagePrompt);
-                    store.setMessageImage(aiMessageId, aiImage);
-                    runOnUiThread(this::renderAll);
-                } catch (Exception ignored) {}
-                store.bumpAiTurn(!aiImage.isEmpty());
+                queueMessageImage(userMessageId, "user", text, "", false);
+                queueMessageImage(aiMessageId, "ai", t.reply, t.imagePrompt, true);
             } catch (Exception e) {
                 store.addMessage("ai", "지금 잠깐 연결이 불안한가 봐. 조금 있다가 다시 말 걸어줘 🥲", "");
+                busy = false;
+                runOnUiThread(this::renderAll);
             }
-            busy = false;
-            runOnUiThread(this::renderAll);
         }).start();
+    }
+
+    private void queueMessageImage(String messageId, String role, String text, String hint, boolean countAiTurn) {
+        store.setMessageImageStatus(messageId, "사진 대기 중…");
+        runOnUiThread(this::renderAll);
+        IMAGE_QUEUE.execute(() -> {
+            store.setMessageImageStatus(messageId, "사진 생성 중…");
+            runOnUiThread(this::renderAll);
+            try {
+                AiEngine engine = new AiEngine();
+                String image = engine.generateMessageImage(getApplicationContext(), store, role, text, hint);
+                store.setMessageImage(messageId, image);
+                if (countAiTurn) store.bumpAiTurn(true);
+            } catch (Exception e) {
+                String reason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                reason = reason.replace('\n', ' ').trim();
+                if (reason.length() > 90) reason = reason.substring(0, 90);
+                store.setMessageImageStatus(messageId, "사진 실패: " + reason);
+                if (countAiTurn) store.bumpAiTurn(false);
+            }
+            runOnUiThread(this::renderAll);
+        });
     }
 
     private void generateInitialStory() {
