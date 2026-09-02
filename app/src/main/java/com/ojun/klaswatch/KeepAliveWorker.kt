@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jsoup.Connection
 import org.jsoup.Jsoup
 
 class KeepAliveWorker(appContext: Context, params: WorkerParameters) :
@@ -16,20 +17,23 @@ class KeepAliveWorker(appContext: Context, params: WorkerParameters) :
         if (seedUrl.isBlank()) return@withContext Result.success()
 
         try {
-            val cookie = CookieManager.getInstance().getCookie(seedUrl).orEmpty()
+            val cookieManager = CookieManager.getInstance()
+            val cookie = cookieManager.getCookie(seedUrl).orEmpty()
             if (cookie.isBlank()) {
                 notifyLoginRequired()
                 return@withContext Result.success()
             }
 
             val response = Jsoup.connect(seedUrl)
-                .userAgent("Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36 KLASWatch/0.4")
+                .userAgent("Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36 KLASWatch/0.5")
                 .header("Accept-Language", "ko-KR,ko;q=0.9,en;q=0.7")
                 .header("Cookie", cookie)
                 .followRedirects(true)
                 .ignoreContentType(true)
                 .timeout(20_000)
                 .execute()
+
+            syncCookies(response)
 
             if (looksLoggedOut(response.url().toString(), response.body())) {
                 notifyLoginRequired()
@@ -40,6 +44,16 @@ class KeepAliveWorker(appContext: Context, params: WorkerParameters) :
         } catch (_: Exception) {
             Result.retry()
         }
+    }
+
+    private fun syncCookies(response: Connection.Response) {
+        if (response.cookies().isEmpty()) return
+        val cm = CookieManager.getInstance()
+        val url = response.url().toString()
+        response.cookies().forEach { (name, value) ->
+            cm.setCookie(url, "$name=$value; Path=/; Secure")
+        }
+        cm.flush()
     }
 
     private fun notifyLoginRequired() {
@@ -56,4 +70,3 @@ class KeepAliveWorker(appContext: Context, params: WorkerParameters) :
             (h.contains("비밀번호 최초 등록") && h.contains("로그인"))
     }
 }
-
