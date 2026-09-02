@@ -5,7 +5,16 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class RelayResult(val ok: Boolean, val message: String)
+data class RelayResult(
+    val ok: Boolean,
+    val httpStatus: Int?,
+    val serverMessage: String,
+) {
+    fun displayMessage(): String {
+        val http = httpStatus?.let { "HTTP $it" } ?: "HTTP 응답 없음"
+        return "$http · $serverMessage"
+    }
+}
 
 object RelayClient {
     fun send(webhook: String, token: String, target: MonitorTarget, notice: NoticeItem, detail: String): Boolean {
@@ -24,7 +33,7 @@ object RelayClient {
     }
 
     fun sendTest(webhook: String, token: String): RelayResult {
-        if (webhook.isBlank()) return RelayResult(false, "중계 주소가 비어 있습니다.")
+        if (webhook.isBlank()) return RelayResult(false, null, "중계 주소가 비어 있습니다.")
         val payload = JSONObject().apply {
             put("token", token)
             put("target", "KLAS Watch")
@@ -54,15 +63,22 @@ object RelayClient {
             conn.disconnect()
 
             if (code !in 200..299) {
-                RelayResult(false, "HTTP $code ${response.take(160)}".trim())
+                RelayResult(false, code, response.take(240).ifBlank { "서버 오류 본문이 비어 있습니다." })
             } else {
                 val parsed = runCatching { JSONObject(response) }.getOrNull()
-                val ok = parsed?.optBoolean("ok", false) ?: !response.contains("\"ok\":false")
-                if (ok) RelayResult(true, "중계 서버가 테스트 메일을 전송했습니다.")
-                else RelayResult(false, parsed?.optString("error")?.takeIf { it.isNotBlank() } ?: response.take(160).ifBlank { "중계 서버가 실패를 반환했습니다." })
+                if (parsed == null) {
+                    RelayResult(false, code, "JSON 응답이 아닙니다: ${response.take(200).ifBlank { "빈 응답" }}")
+                } else if (parsed.optBoolean("ok", false)) {
+                    RelayResult(true, code, parsed.optString("message", "중계 서버가 메일을 전송했습니다."))
+                } else {
+                    val error = parsed.optString("error").ifBlank { "중계 서버가 실패를 반환했습니다." }
+                    val errorCode = parsed.optString("code")
+                    RelayResult(false, code, listOf(errorCode, error).filter { it.isNotBlank() }.joinToString(": "))
+                }
             }
         } catch (e: Exception) {
-            RelayResult(false, "${e.javaClass.simpleName}: ${e.message.orEmpty()}".take(180))
+            RelayResult(false, null, "${e.javaClass.simpleName}: ${e.message.orEmpty()}".take(240))
         }
     }
 }
+
