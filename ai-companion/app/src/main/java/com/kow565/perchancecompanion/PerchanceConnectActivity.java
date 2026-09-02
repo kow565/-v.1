@@ -62,7 +62,7 @@ public class PerchanceConnectActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView info = new TextView(this);
-        info.setText("v0.6.1은 Perchance 생성기를 정상 iframe 안에서 실행해. userKey나 내부 /api/generate 대신 Harin 전용 bridge가 공식 AI Text Plugin과 Text-to-Image Plugin을 import해. 아래 브리지 화면에서 브라우저 검증이 나오면 직접 완료해 줘.");
+        info.setText("v0.6.2는 Perchance 생성기를 정상 iframe 안에서 실행하고, 준비 상태와 실제 WebView를 함께 확인해. userKey나 내부 /api/generate 대신 Harin 전용 bridge가 공식 AI Text Plugin과 Text-to-Image Plugin을 import해.");
         info.setTextSize(13);
         info.setTextColor(Color.DKGRAY);
         info.setPadding(0, dp(12), 0, dp(12));

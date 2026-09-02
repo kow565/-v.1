@@ -81,6 +81,8 @@ public final class PerchanceBrowserTransport {
     }
 
     public static void restart() {
+        runtimeReady = false;
+        lastDiagnostic = "plugin runtime 재시작 대기";
         Activity a = currentActivity.get();
         MAIN.post(() -> {
             destroyRuntime();
@@ -188,7 +190,7 @@ public final class PerchanceBrowserTransport {
         else startHeadless(HarinApplication.context());
         long end = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < end) {
-            if (runtimeReady) return;
+            if (runtimeReady && runtimeWeb != null) return;
             Thread.sleep(100);
         }
         throw new IllegalStateException("Perchance generator runtime did not expose both plugins: " + lastDiagnostic);
@@ -196,9 +198,10 @@ public final class PerchanceBrowserTransport {
 
     private static void restartAndWait() {
         try {
+            runtimeReady = false;
             restart();
             long end = System.currentTimeMillis() + 25000;
-            while (System.currentTimeMillis() < end && !runtimeReady) Thread.sleep(120);
+            while (System.currentTimeMillis() < end && (!runtimeReady || runtimeWeb == null)) Thread.sleep(120);
         } catch (Throwable ignored) {}
     }
 
