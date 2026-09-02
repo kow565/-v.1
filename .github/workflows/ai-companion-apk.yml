@@ -1,0 +1,82 @@
+name: Build AI Companion APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ ai-companion-v1, main ]
+    paths:
+      - 'ai-companion/**'
+      - '.github/workflows/ai-companion-apk.yml'
+
+concurrency:
+  group: ai-companion-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Install Android SDK 35
+        run: yes | sdkmanager 'platforms;android-35' 'build-tools;35.0.0' > /dev/null
+      - name: Read app version
+        run: |
+          VERSION_NAME=$(grep '^VERSION_NAME=' ai-companion/version.properties | cut -d= -f2)
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+      - name: Build debug APK
+        working-directory: ai-companion
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Name APK by version
+        run: |
+          mkdir -p ai-companion/dist
+          cp ai-companion/app/build/outputs/apk/debug/app-debug.apk "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Harin-v${{ env.VERSION_NAME }}-debug-apk
+          path: ai-companion/dist/Harin-v${{ env.VERSION_NAME }}-debug.apk
+      - name: Install emulator image
+        run: yes | sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64' > /dev/null
+      - name: Launch smoke test
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo no | avdmanager create avd -n harin_ci -k 'system-images;android-35;google_apis;x86_64' --force
+          "$ANDROID_HOME/emulator/emulator" -avd harin_ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > /tmp/harin-emulator.log 2>&1 &
+          adb wait-for-device
+          BOOTED=0
+          for i in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then BOOTED=1; break; fi
+            sleep 1
+          done
+          if [ "$BOOTED" != "1" ]; then
+            echo 'Emulator did not finish booting.'
+            tail -80 /tmp/harin-emulator.log || true
+            exit 1
+          fi
+          adb install -r "ai-companion/dist/Harin-v${VERSION_NAME}-debug.apk"
+          adb logcat -c
+          adb shell am force-stop com.kow565.harincompanion || true
+          adb shell am start -W -n com.kow565.harincompanion/com.kow565.perchancecompanion.InboxActivity
+          sleep 6
+          if ! adb shell pidof com.kow565.harincompanion | grep -q '[0-9]'; then
+            echo 'App process exited after launch.'
+            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|harincompanion|perchancecompanion|Process: com.kow565.harincompanion' || true
+            exit 1
+          fi
+          adb shell uiautomator dump /sdcard/harin-window.xml >/dev/null 2>&1 || true
+          if ! adb shell cat /sdcard/harin-window.xml 2>/dev/null | grep -q '메시지'; then
+            echo 'DM inbox title was not found.'
+            adb shell cat /sdcard/harin-window.xml || true
+            adb logcat -d -v threadtime | grep -E 'AndroidRuntime|FATAL EXCEPTION|harincompanion|perchancecompanion' || true
+            exit 1
+          fi
+          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|com.kow565.harincompanion|InboxActivity' | head -30 || true
