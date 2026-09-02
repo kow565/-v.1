@@ -11,8 +11,8 @@ android {
         applicationId = "com.ojun.klaswatch"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
     buildFeatures {
@@ -34,3 +34,4 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("org.jsoup:jsoup:1.23.2")
 }
+
