@@ -1,6 +1,8 @@
 package com.kow565.perchancecompanion;
 
 import android.app.Activity;
+import android.content.Context;
+import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
 import android.view.ViewGroup;
@@ -31,6 +33,7 @@ public final class PerchanceBrowserTransport {
     private static final Object TEXT_LOCK = new Object();
     private static final Object IMAGE_LOCK = new Object();
     private static final ConcurrentHashMap<String, Pending> PENDING = new ConcurrentHashMap<>();
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     private static WeakReference<Activity> currentActivity = new WeakReference<>(null);
     private static Activity sessionActivity;
@@ -48,6 +51,12 @@ public final class PerchanceBrowserTransport {
         activity.runOnUiThread(() -> ensureRuntime(activity));
     }
 
+    public static void startHeadless(Context context) {
+        if (context == null) return;
+        Context app = context.getApplicationContext();
+        MAIN.post(() -> ensureHeadlessRuntime(app));
+    }
+
     public static void unbind(Activity activity) {
         if (activity == null || sessionActivity != activity) return;
         activity.runOnUiThread(() -> {
@@ -55,12 +64,12 @@ public final class PerchanceBrowserTransport {
             sessionActivity = null;
             Activity current = currentActivity.get();
             if (current == activity) currentActivity = new WeakReference<>(null);
+            ensureHeadlessRuntime(HarinApplication.context());
         });
     }
 
     public static boolean isAvailable() {
-        Activity a = currentActivity.get();
-        return a != null && !a.isFinishing();
+        return runtimeWeb != null;
     }
 
     public static String statusSummary() {
@@ -74,11 +83,11 @@ public final class PerchanceBrowserTransport {
 
     public static void restart() {
         Activity a = currentActivity.get();
-        if (a == null || a.isFinishing()) return;
-        a.runOnUiThread(() -> {
+        MAIN.post(() -> {
             destroyRuntime();
             sessionActivity = null;
-            ensureRuntime(a);
+            if (a != null && !a.isFinishing()) ensureRuntime(a);
+            else ensureHeadlessRuntime(HarinApplication.context());
         });
     }
 
@@ -89,7 +98,7 @@ public final class PerchanceBrowserTransport {
             Exception last = null;
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {
-                    ensureReady(requireActivity(), 45000);
+                    ensureReady(45000);
                     return runTextOnce(prompt == null ? "" : prompt);
                 } catch (Exception e) {
                     last = e;
@@ -107,7 +116,7 @@ public final class PerchanceBrowserTransport {
             Exception last = null;
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {
-                    ensureReady(requireActivity(), 45000);
+                    ensureReady(45000);
                     return runImageOnce(prompt == null ? "" : prompt,
                             negativePrompt == null ? "" : negativePrompt, seed);
                 } catch (Exception e) {
@@ -120,7 +129,6 @@ public final class PerchanceBrowserTransport {
     }
 
     private static String runTextOnce(String prompt) throws Exception {
-        Activity a = requireActivity();
         String id = UUID.randomUUID().toString();
         JSONObject request = new JSONObject();
         request.put("id", id);
@@ -128,11 +136,10 @@ public final class PerchanceBrowserTransport {
         String script = "(()=>{const b=document.querySelector('#harinTextBridgeButton');" +
                 "if(!b){HarinNative.fail(" + JSONObject.quote(id) + ",'text','bridge button missing');return;}" +
                 "b.dataset.request=encodeURIComponent(" + JSONObject.quote(request.toString()) + ");b.click();})()";
-        return execute(a, id, script, "text", 100000);
+        return execute(id, script, "text", 100000);
     }
 
     private static String runImageOnce(String prompt, String negativePrompt, int seed) throws Exception {
-        Activity a = requireActivity();
         String id = UUID.randomUUID().toString();
         JSONObject request = new JSONObject();
         request.put("id", id);
@@ -142,15 +149,15 @@ public final class PerchanceBrowserTransport {
         String script = "(()=>{const b=document.querySelector('#harinImageBridgeButton');" +
                 "if(!b){HarinNative.fail(" + JSONObject.quote(id) + ",'image','bridge button missing');return;}" +
                 "b.dataset.request=encodeURIComponent(" + JSONObject.quote(request.toString()) + ");b.click();})()";
-        return execute(a, id, script, "image", 180000);
+        return execute(id, script, "image", 180000);
     }
 
-    private static String execute(Activity a, String id, String script, String kind, long timeoutMs) throws Exception {
+    private static String execute(String id, String script, String kind, long timeoutMs) throws Exception {
         WebView web = runtimeWeb;
         if (web == null) throw new IllegalStateException("Perchance generator WebView unavailable");
         Pending p = new Pending();
         PENDING.put(id, p);
-        a.runOnUiThread(() -> {
+        MAIN.post(() -> {
             try { web.evaluateJavascript(script, null); }
             catch (Throwable t) {
                 Pending q = PENDING.get(id);
@@ -168,8 +175,10 @@ public final class PerchanceBrowserTransport {
         return p.result;
     }
 
-    private static void ensureReady(Activity a, long timeoutMs) throws Exception {
-        a.runOnUiThread(() -> ensureRuntime(a));
+    private static void ensureReady(long timeoutMs) throws Exception {
+        Activity a = currentActivity.get();
+        if (a != null && !a.isFinishing()) MAIN.post(() -> ensureRuntime(a));
+        else startHeadless(HarinApplication.context());
         long end = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < end) {
             if (runtimeReady) return;
@@ -184,13 +193,6 @@ public final class PerchanceBrowserTransport {
             long end = System.currentTimeMillis() + 25000;
             while (System.currentTimeMillis() < end && !runtimeReady) Thread.sleep(120);
         } catch (Throwable ignored) {}
-    }
-
-    private static Activity requireActivity() {
-        Activity a = currentActivity.get();
-        if (a == null || a.isFinishing())
-            throw new IllegalStateException("열려 있는 앱 화면이 없어 Perchance 플러그인 런타임을 사용할 수 없어");
-        return a;
     }
 
     private static void ensureRuntime(Activity activity) {
@@ -212,8 +214,24 @@ public final class PerchanceBrowserTransport {
         }
     }
 
-    private static WebView createWeb(Activity activity, int epoch) {
-        WebView w = new WebView(activity);
+    private static void ensureHeadlessRuntime(Context context) {
+        if (context == null || runtimeWeb != null) return;
+        sessionActivity = null;
+        runtimeReady = false;
+        runtimeUrl = "";
+        lastDiagnostic = "백그라운드 Chrome runtime 로딩";
+        final int epoch = ++generationEpoch;
+        try {
+            runtimeWeb = createWeb(context, epoch);
+            runtimeWeb.loadUrl(HOST_PAGE + "?harinBackground=" + System.currentTimeMillis());
+        } catch (Throwable t) {
+            lastDiagnostic = "백그라운드 WebView 생성 실패: " + safe(t);
+            destroyRuntime();
+        }
+    }
+
+    private static WebView createWeb(Context context, int epoch) {
+        WebView w = new WebView(context);
         WebSettings s = w.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -225,7 +243,7 @@ public final class PerchanceBrowserTransport {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         s.setSafeBrowsingEnabled(true);
-        s.setUserAgentString(chromeLikeUserAgent(activity));
+        s.setUserAgentString(chromeLikeUserAgent(context));
         android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(w, true);
@@ -285,8 +303,8 @@ public final class PerchanceBrowserTransport {
      * though the installed WebView uses the same Chromium engine as Chrome. Keep the real engine
      * version and device details, but expose the standard Android Chrome user-agent shape.
      */
-    private static String chromeLikeUserAgent(Activity activity) {
-        String ua = WebSettings.getDefaultUserAgent(activity);
+    public static String chromeLikeUserAgent(Context context) {
+        String ua = WebSettings.getDefaultUserAgent(context);
         if (ua == null || ua.trim().isEmpty()) {
             return "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";

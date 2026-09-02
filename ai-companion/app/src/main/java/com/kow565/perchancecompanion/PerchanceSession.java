@@ -39,11 +39,11 @@ public final class PerchanceSession {
                 .getString(kind + "_cookie", "");
     }
 
-    public static boolean hasText(Context context) { return !key(context, "text").isEmpty(); }
-    public static boolean hasImage(Context context) { return !key(context, "image").isEmpty(); }
+    public static boolean hasText(Context context) { return isReady(context); }
+    public static boolean hasImage(Context context) { return isReady(context); }
 
     public static boolean isReady(Context context) {
-        // v0.5.0 connectivity is only the official imported-plugin runtime.
+        // Official imported-plugin runtime. Never fall back to stale extracted user keys.
         try {
             if (PerchanceBrowserTransport.statusSummary().contains("플러그인 ✓")) return true;
         } catch (Throwable ignored) {}

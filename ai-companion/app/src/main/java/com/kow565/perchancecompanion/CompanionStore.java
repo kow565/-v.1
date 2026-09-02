@@ -241,7 +241,7 @@ public class CompanionStore {
         JSONArray arr = messages();
         for (int i = arr.length() - 1; i >= 0; i--) {
             JSONObject m = arr.optJSONObject(i);
-            if (m != null && messageId.equals(m.optString("id"))) {
+            if (m != null && messageId.equals(messageKey(m))) {
                 try {
                     m.put("image", imagePath);
                     prefs.edit().putString("messages", arr.toString()).apply();
@@ -249,6 +249,30 @@ public class CompanionStore {
                 return;
             }
         }
+    }
+
+    public synchronized boolean updateMessageText(String messageKey, String newText) {
+        if (messageKey == null || messageKey.isEmpty() || newText == null || newText.trim().isEmpty()) return false;
+        JSONArray arr = messages();
+        for (int i = arr.length() - 1; i >= 0; i--) {
+            JSONObject m = arr.optJSONObject(i);
+            if (m != null && messageKey.equals(messageKey(m))) {
+                try {
+                    m.put("text", newText.trim());
+                    m.put("image", "");
+                    m.put("edited", true);
+                    prefs.edit().putString("messages", arr.toString()).apply();
+                    return true;
+                } catch (Exception ignored) { return false; }
+            }
+        }
+        return false;
+    }
+
+    public static String messageKey(JSONObject message) {
+        if (message == null) return "";
+        String id = message.optString("id", "");
+        return id.isEmpty() ? "time:" + message.optLong("time", 0L) : id;
     }
 
     public synchronized String recentTranscript(int count) {

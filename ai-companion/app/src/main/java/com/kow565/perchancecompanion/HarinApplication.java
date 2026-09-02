@@ -11,6 +11,7 @@ public class HarinApplication extends Application {
     @Override public void onCreate() {
         super.onCreate();
         appContext = getApplicationContext();
+        PerchanceBrowserTransport.startHeadless(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity activity, Bundle savedInstanceState) {}
             @Override public void onActivityStarted(Activity activity) {}

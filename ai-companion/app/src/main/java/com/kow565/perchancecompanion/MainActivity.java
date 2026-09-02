@@ -2,6 +2,7 @@ package com.kow565.perchancecompanion;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -223,7 +224,7 @@ public class MainActivity extends Activity {
         }
 
         TextView text = new TextView(this);
-        text.setText(m.optString("text"));
+        text.setText(m.optString("text") + (m.optBoolean("edited", false) ? "  (수정됨)" : ""));
         text.setTextSize(15);
         text.setTextColor(mine ? Color.WHITE : Color.BLACK);
         text.setPadding(dp(11), dp(8), dp(11), dp(8));
@@ -232,6 +233,39 @@ public class MainActivity extends Activity {
         bp.width = Math.min(getResources().getDisplayMetrics().widthPixels * 4 / 5, dp(330));
         row.addView(bubble, bp);
         chatContainer.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (mine) {
+            bubble.setOnLongClickListener(v -> {
+                editSentMessage(m);
+                return true;
+            });
+        }
+    }
+
+    private void editSentMessage(JSONObject message) {
+        final String key = CompanionStore.messageKey(message);
+        final EditText editor = new EditText(this);
+        editor.setText(message.optString("text", ""));
+        editor.setSelection(editor.length());
+        editor.setSingleLine(false);
+        editor.setPadding(dp(18), dp(10), dp(18), dp(10));
+        new AlertDialog.Builder(this)
+                .setTitle("보낸 메시지 수정")
+                .setView(editor)
+                .setNegativeButton("취소", null)
+                .setPositiveButton("저장", (dialog, which) -> {
+                    String changed = editor.getText().toString().trim();
+                    if (!store.updateMessageText(key, changed)) return;
+                    renderMessages();
+                    new Thread(() -> {
+                        try {
+                            AiEngine engine = new AiEngine();
+                            String image = engine.generateMessageImage(this, store, "user", changed, "");
+                            store.setMessageImage(key, image);
+                            runOnUiThread(this::renderAll);
+                        } catch (Exception ignored) {}
+                    }, "harin-edited-message-image").start();
+                })
+                .show();
     }
 
     private void sendMessage() {
