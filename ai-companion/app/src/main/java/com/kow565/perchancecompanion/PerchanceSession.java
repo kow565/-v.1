@@ -43,7 +43,7 @@ public final class PerchanceSession {
     public static boolean hasImage(Context context) { return !key(context, "image").isEmpty(); }
 
     public static boolean isReady(Context context) {
-        // v0.4.1 connectivity is only the official imported-plugin runtime.
+        // v0.4.2 connectivity is only the official imported-plugin runtime.
         try {
             if (PerchanceBrowserTransport.statusSummary().contains("플러그인 ✓")) return true;
         } catch (Throwable ignored) {}

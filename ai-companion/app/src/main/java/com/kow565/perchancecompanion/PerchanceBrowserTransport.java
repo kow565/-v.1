@@ -219,7 +219,13 @@ public final class PerchanceBrowserTransport {
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
-        s.setUserAgentString(WebSettings.getDefaultUserAgent(activity));
+        s.setSupportMultipleWindows(true);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        s.setSafeBrowsingEnabled(true);
+        s.setUserAgentString(chromeLikeUserAgent(activity));
         android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(w, true);
@@ -271,6 +277,25 @@ public final class PerchanceBrowserTransport {
         w.setFocusable(false);
         w.setAlpha(0.02f);
         return w;
+    }
+
+    /**
+     * Android WebView advertises itself with both "; wv" and "Version/4.0". Perchance's
+     * compatibility gate treats that token combination as an unsupported embedded browser even
+     * though the installed WebView uses the same Chromium engine as Chrome. Keep the real engine
+     * version and device details, but expose the standard Android Chrome user-agent shape.
+     */
+    private static String chromeLikeUserAgent(Activity activity) {
+        String ua = WebSettings.getDefaultUserAgent(activity);
+        if (ua == null || ua.trim().isEmpty()) {
+            return "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+        }
+        return ua.replace("; wv)", ")")
+                .replace(" wv)", ")")
+                .replaceFirst("\\s*Version/4\\.0\\s+", " ")
+                .replaceAll("\\s{2,}", " ")
+                .trim();
     }
 
     private static void discoverGeneratorIframe(WebView web, int epoch, int attempt) {
