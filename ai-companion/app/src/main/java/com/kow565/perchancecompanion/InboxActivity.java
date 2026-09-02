@@ -1,209 +1,126 @@
 package com.kow565.perchancecompanion;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
-import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
-
 public class InboxActivity extends Activity {
-    private LinearLayout dmList;
-    private TextView connectionStatus;
-    private CharacterLibrary library;
+    public static final String WEB_APP_URL = "https://perchance.org/87fjsh5tkf";
+    private boolean launched;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        library = new CharacterLibrary(this);
         buildUi();
+        HarinKeepAliveService.start(this);
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != getPackageManager().PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
+        }
     }
 
     @Override protected void onResume() {
         super.onResume();
-        library = new CharacterLibrary(this);
-        renderConnection();
-        renderDmList();
+        if (!launched) {
+            launched = true;
+            openHarin();
+        }
+    }
+
+    private void openHarin() {
+        Uri url = Uri.parse(WEB_APP_URL);
+        Intent chrome = new Intent(Intent.ACTION_VIEW, url);
+        chrome.setPackage("com.android.chrome");
+        chrome.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(chrome);
+        } catch (ActivityNotFoundException missingChrome) {
+            Intent browser = new Intent(Intent.ACTION_VIEW, url);
+            browser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(browser);
+        }
     }
 
     private void buildUi() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.WHITE);
-        root.setFitsSystemWindows(true);
+        root.setGravity(Gravity.CENTER);
+        root.setPadding(dp(28), dp(40), dp(28), dp(40));
+        root.setBackgroundColor(Color.rgb(250, 247, 249));
 
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(16), dp(13), dp(10), dp(9));
+        TextView mark = new TextView(this);
+        mark.setText("H");
+        mark.setTextSize(42);
+        mark.setTextColor(Color.rgb(199, 82, 137));
+        mark.setTypeface(Typeface.DEFAULT_BOLD);
+        mark.setGravity(Gravity.CENTER);
+        root.addView(mark, new LinearLayout.LayoutParams(dp(90), dp(90)));
+
         TextView title = new TextView(this);
-        title.setText("메시지");
-        title.setTextSize(25);
-        title.setTextColor(Color.BLACK);
+        title.setText("Harin");
+        title.setTextSize(30);
+        title.setTextColor(Color.rgb(25, 25, 25));
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Button add = compactButton("＋");
-        add.setContentDescription("새 캐릭터 추가");
-        add.setOnClickListener(v -> startActivity(new Intent(this, StudioActivity.class)));
-        header.addView(add);
-        root.addView(header);
+        title.setGravity(Gravity.CENTER);
+        root.addView(title, matchWrap(dp(10)));
 
-        LinearLayout connectBar = new LinearLayout(this);
-        connectBar.setGravity(Gravity.CENTER_VERTICAL);
-        connectBar.setPadding(dp(14), dp(7), dp(10), dp(8));
-        connectBar.setBackgroundColor(Color.rgb(249,249,249));
-        connectionStatus = new TextView(this);
-        connectionStatus.setTextSize(12);
-        connectionStatus.setTextColor(Color.DKGRAY);
-        connectBar.addView(connectionStatus, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Button connect = compactButton("Perchance 연결");
-        connect.setTextSize(11);
-        connect.setOnClickListener(v -> startActivity(new Intent(this, PerchanceConnectActivity.class)));
-        connectBar.addView(connect);
-        root.addView(connectBar);
+        TextView description = new TextView(this);
+        description.setText("실제 Chrome에서 Perchance와 연결해요.\n대화와 장면 이미지는 휴대폰에 보관됩니다.");
+        description.setTextSize(15);
+        description.setTextColor(Color.DKGRAY);
+        description.setGravity(Gravity.CENTER);
+        description.setLineSpacing(0, 1.25f);
+        root.addView(description, matchWrap(dp(14)));
 
-        TextView hint = new TextView(this);
-        hint.setText("AI 캐릭터마다 대화와 사진 상태가 따로 유지돼");
-        hint.setTextSize(12);
-        hint.setTextColor(Color.GRAY);
-        hint.setPadding(dp(16), dp(10), dp(16), dp(7));
-        root.addView(hint);
+        Button open = new Button(this);
+        open.setText("Chrome에서 Harin 열기");
+        open.setTextSize(16);
+        open.setAllCaps(false);
+        open.setOnClickListener(v -> openHarin());
+        root.addView(open, matchWrap(dp(28)));
 
-        ScrollView scroll = new ScrollView(this);
-        dmList = new LinearLayout(this);
-        dmList.setOrientation(LinearLayout.VERTICAL);
-        dmList.setPadding(dp(8), 0, dp(8), dp(24));
-        scroll.addView(dmList);
-        root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        Button battery = new Button(this);
+        battery.setText("백그라운드 유지 설정");
+        battery.setTextSize(14);
+        battery.setAllCaps(false);
+        battery.setOnClickListener(v -> {
+            try {
+                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Throwable ignored) {
+                startActivity(new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS));
+            }
+        });
+        root.addView(battery, matchWrap(dp(8)));
+
+        TextView note = new TextView(this);
+        note.setText("상단 알림이 보이면 Harin 연결 유지 서비스가 실행 중이에요.");
+        note.setTextSize(12);
+        note.setTextColor(Color.GRAY);
+        note.setGravity(Gravity.CENTER);
+        root.addView(note, matchWrap(dp(18)));
 
         setContentView(root);
     }
 
-    private void renderConnection() {
-        if (connectionStatus == null) return;
-        if (PerchanceSession.isReady(this)) {
-            connectionStatus.setText("● Perchance 연결됨");
-            connectionStatus.setTextColor(Color.rgb(20,130,65));
-        } else {
-            connectionStatus.setText("● Perchance 연결 필요 · 대화/이미지 생성 전 한 번 연결해줘");
-            connectionStatus.setTextColor(Color.rgb(190,70,40));
-        }
+    private LinearLayout.LayoutParams matchWrap(int top) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.topMargin = top;
+        return p;
     }
 
-    private void renderDmList() {
-        if (dmList == null) return;
-        dmList.removeAllViews();
-        JSONArray arr = library.characters();
-        for (int i = 0; i < arr.length(); i++) {
-            JSONObject c = arr.optJSONObject(i);
-            if (c == null) continue;
-            final JSONObject character = c;
-            String id = c.optString("id", "");
-            CompanionStore store = new CompanionStore(this, id);
-            if (store.messages().length() == 0) store.initializeCharacter(c.optString("name", "하린"), c.optJSONObject("state"), c.optInt("seed", 428731), false);
-
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(10), dp(10), dp(8), dp(10));
-            row.setBackgroundColor(Color.WHITE);
-
-            TextView avatar = avatar(c.optString("name", "AI"));
-            row.addView(avatar, new LinearLayout.LayoutParams(dp(58), dp(58)));
-
-            LinearLayout texts = new LinearLayout(this);
-            texts.setOrientation(LinearLayout.VERTICAL);
-            texts.setPadding(dp(12), 0, dp(8), 0);
-            TextView name = new TextView(this);
-            name.setText(c.optString("name", "캐릭터"));
-            name.setTextSize(16);
-            name.setTextColor(Color.BLACK);
-            name.setTypeface(Typeface.DEFAULT_BOLD);
-            texts.addView(name);
-
-            TextView preview = new TextView(this);
-            preview.setText(store.lastMessagePreview());
-            preview.setTextSize(13);
-            preview.setTextColor(Color.rgb(100,100,100));
-            preview.setSingleLine(true);
-            texts.addView(preview);
-            row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-
-            TextView time = new TextView(this);
-            time.setText(formatTime(store.lastMessageTime()));
-            time.setTextSize(11);
-            time.setTextColor(Color.GRAY);
-            row.addView(time);
-
-            row.setOnClickListener(v -> openDm(character));
-            dmList.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(78)));
-
-            View divider = new View(this);
-            divider.setBackgroundColor(Color.rgb(242,242,242));
-            LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1);
-            dp.setMargins(dp(78), 0, dp(8), 0);
-            dmList.addView(divider, dp);
-        }
-
-        TextView addMore = new TextView(this);
-        addMore.setText("＋ 새 AI 캐릭터 만들기");
-        addMore.setTextSize(14);
-        addMore.setTextColor(Color.rgb(0,110,220));
-        addMore.setGravity(Gravity.CENTER);
-        addMore.setPadding(dp(8), dp(18), dp(8), dp(18));
-        addMore.setOnClickListener(v -> startActivity(new Intent(this, StudioActivity.class)));
-        dmList.addView(addMore);
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
-
-    private void openDm(JSONObject character) {
-        library.activateInChat(this, character, false);
-        startActivity(new Intent(this, SafeMainActivity.class));
-    }
-
-    private TextView avatar(String name) {
-        TextView v = new TextView(this);
-        String letter = name == null || name.isEmpty() ? "AI" : name.substring(0, 1);
-        v.setText(letter);
-        v.setTextSize(21);
-        v.setTextColor(Color.WHITE);
-        v.setGravity(Gravity.CENTER);
-        v.setTypeface(Typeface.DEFAULT_BOLD);
-        GradientDrawable g = new GradientDrawable();
-        g.setShape(GradientDrawable.OVAL);
-        int hash = Math.abs((name == null ? 0 : name.hashCode()));
-        g.setColor(Color.rgb(90 + hash % 100, 80 + (hash / 7) % 110, 120 + (hash / 13) % 90));
-        v.setBackground(g);
-        return v;
-    }
-
-    private String formatTime(long t) {
-        if (t <= 0) return "";
-        long diff = System.currentTimeMillis() - t;
-        if (diff < 60L * 60L * 1000L) return Math.max(1, diff / 60000L) + "분";
-        if (diff < 24L * 60L * 60L * 1000L) return diff / 3600000L + "시간";
-        return new SimpleDateFormat("M/d", Locale.KOREA).format(new Date(t));
-    }
-
-    private Button compactButton(String text) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setAllCaps(false);
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setPadding(dp(10), 0, dp(10), 0);
-        return b;
-    }
-
-    private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
 }
