@@ -5,6 +5,7 @@ import android.os.Looper;
 import android.util.Base64;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -19,40 +20,37 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Browser-backed Perchance transport.
- *
- * Perchance's AI plugins are designed to run inside browser embeds. This class keeps two tiny,
- * attached WebViews on the currently resumed Activity and performs the API calls from the same
- * origins as the official embeds. Cookies, browser verification and server session state therefore
- * stay in the WebView instead of being copied into native HTTP code.
+ * Uses Perchance the way Perchance generators do: load a real generator runtime and call its
+ * imported ai-text-plugin / text-to-image-plugin functions. We intentionally do not scrape or
+ * persist userKey values on this primary path. The plugins own their verification, cookies,
+ * embeds and server protocol.
  */
 public final class PerchanceBrowserTransport {
-    private static final String TEXT_EMBED = "https://text-generation.perchance.org/embed";
-    private static final String IMAGE_EMBED = "https://image-generation.perchance.org/embed";
+    private static final String HOST_PAGE = "https://perchance.org/ai-character-chat";
     private static final Object TEXT_LOCK = new Object();
     private static final Object IMAGE_LOCK = new Object();
     private static final ConcurrentHashMap<String, Pending> PENDING = new ConcurrentHashMap<>();
+
     private static WeakReference<Activity> currentActivity = new WeakReference<>(null);
     private static Activity sessionActivity;
-    private static WebView textWeb;
-    private static WebView imageWeb;
-    private static volatile boolean textReady;
-    private static volatile boolean imageReady;
-    private static int textThreadCounter;
-    private static int imageThreadCounter;
+    private static WebView runtimeWeb;
+    private static volatile boolean runtimeReady;
+    private static volatile String runtimeUrl = "";
+    private static volatile String lastDiagnostic = "대기";
+    private static int generationEpoch = 0;
 
     private PerchanceBrowserTransport() {}
 
     public static void bind(Activity activity) {
         if (activity == null || activity.isFinishing()) return;
         currentActivity = new WeakReference<>(activity);
-        activity.runOnUiThread(() -> ensureWebViews(activity));
+        activity.runOnUiThread(() -> ensureRuntime(activity));
     }
 
     public static void unbind(Activity activity) {
         if (activity == null || sessionActivity != activity) return;
         activity.runOnUiThread(() -> {
-            destroyWebViews();
+            destroyRuntime();
             sessionActivity = null;
             Activity current = currentActivity.get();
             if (current == activity) currentActivity = new WeakReference<>(null);
@@ -64,254 +62,322 @@ public final class PerchanceBrowserTransport {
         return a != null && !a.isFinishing();
     }
 
+    public static String statusSummary() {
+        if (!isAvailable()) return "브라우저 런타임 대기";
+        return runtimeReady ? "Perchance 플러그인 ✓" : "Perchance 플러그인 준비 중 · " + lastDiagnostic;
+    }
+
+    public static String diagnosticSummary() {
+        return "ready=" + runtimeReady + " · runtime=" + (runtimeUrl.isEmpty() ? "없음" : runtimeUrl) + " · " + lastDiagnostic;
+    }
+
+    public static void restart() {
+        Activity a = currentActivity.get();
+        if (a == null || a.isFinishing()) return;
+        a.runOnUiThread(() -> {
+            destroyRuntime();
+            sessionActivity = null;
+            ensureRuntime(a);
+        });
+    }
+
     public static String generateText(String prompt) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper())
-            throw new IllegalStateException("Perchance browser generation must run off the main thread");
+            throw new IllegalStateException("Perchance plugin generation must run off the main thread");
         synchronized (TEXT_LOCK) {
             Exception last = null;
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {
-                    int thread = Math.floorMod(textThreadCounter++, 2);
-                    return runTextOnce(prompt == null ? "" : prompt, thread);
+                    ensureReady(requireActivity(), 45000);
+                    return runTextOnce(prompt == null ? "" : prompt);
                 } catch (Exception e) {
                     last = e;
-                    reset("text");
+                    restartAndWait();
                 }
             }
-            throw new IllegalStateException("Perchance 브라우저 텍스트 연결 실패: " + safe(last));
+            throw new IllegalStateException("Perchance AI Text Plugin 실패: " + safe(last));
         }
     }
 
-    public static JSONObject generateImage(String prompt, String negativePrompt, int seed) throws Exception {
+    public static String generateImageDataUrl(String prompt, String negativePrompt, int seed) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper())
-            throw new IllegalStateException("Perchance browser generation must run off the main thread");
+            throw new IllegalStateException("Perchance plugin generation must run off the main thread");
         synchronized (IMAGE_LOCK) {
             Exception last = null;
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {
-                    int thread = Math.floorMod(imageThreadCounter++, 2);
-                    String raw = runImageOnce(prompt == null ? "" : prompt,
-                            negativePrompt == null ? "" : negativePrompt, seed, thread);
-                    JSONObject o = new JSONObject(raw);
-                    String status = o.optString("status", "");
-                    if (!status.isEmpty() && !"success".equalsIgnoreCase(status) && !o.has("imageId"))
-                        throw new IllegalStateException(status + ": " + o.optString("message", o.optString("error", "")));
-                    if (o.optString("imageId", "").isEmpty())
-                        throw new IllegalStateException("imageId missing");
-                    return o;
+                    ensureReady(requireActivity(), 45000);
+                    return runImageOnce(prompt == null ? "" : prompt,
+                            negativePrompt == null ? "" : negativePrompt, seed);
                 } catch (Exception e) {
                     last = e;
-                    reset("image");
+                    restartAndWait();
                 }
             }
-            throw new IllegalStateException("Perchance 브라우저 이미지 연결 실패: " + safe(last));
+            throw new IllegalStateException("Perchance Text-to-Image Plugin 실패: " + safe(last));
         }
     }
 
-    public static String statusSummary() {
-        if (!isAvailable()) return "브라우저 대기";
-        return (textReady ? "텍스트 ✓" : "텍스트 준비 중") + " · " +
-                (imageReady ? "이미지 ✓" : "이미지 준비 중");
-    }
-
-    private static String runTextOnce(String prompt, int thread) throws Exception {
+    private static String runTextOnce(String prompt) throws Exception {
         Activity a = requireActivity();
-        ensureReady(a, "text", 20000);
         String id = UUID.randomUUID().toString();
-        String promptJs = JSONObject.quote(prompt);
         String script = "(async()=>{const RID=" + JSONObject.quote(id) + ";" +
-                "const send=(s)=>HarinNative.ok(RID,btoa(unescape(encodeURIComponent(s))));" +
+                "const ok=(s)=>HarinNative.ok(RID,btoa(unescape(encodeURIComponent(String(s)))));" +
                 "const fail=(s)=>HarinNative.fail(RID,'text',String(s));" +
-                "const keyFrom=async(t)=>{let k='';" +
-                "try{const r=await fetch('/api/verifyUser?thread='+t+'&__cacheBust='+Math.random(),{credentials:'include',cache:'no-store'});" +
-                "const x=await r.text();try{const j=JSON.parse(x);k=j.userKey||j.key||'';}catch(e){}" +
-                "if(!k){const m=x.match(/\\\"userKey\\\"\\s*:\\s*\\\"([^\\\"]+)/);if(m)k=m[1];}}catch(e){}return k;};" +
-                "const parse=(raw)=>{let out='';for(const ln of raw.split(/\\r?\\n/)){const z=ln.trim();try{" +
-                "if(z.startsWith('t:')){const v=JSON.parse(z.slice(2));if(typeof v==='string')out+=v;}" +
-                "else if(z.startsWith('data:')){const p=z.slice(5).trim();if(!p||p==='[DONE]')continue;const v=JSON.parse(p);" +
-                "if(typeof v==='string')out+=v;else if(v&&typeof v.text==='string')out+=v.text;}}catch(e){}}" +
-                "if(out)return out;try{const j=JSON.parse(raw);return j.text||raw;}catch(e){return raw;}};" +
-                "try{let key=await keyFrom(" + thread + ");if(!key)throw new Error('userKey not available in browser session');" +
-                "const body={generatorName:'ai-text-generator',instruction:" + promptJs + ",instructionTokenCount:1,startWith:'',startWithTokenCount:1,stopSequences:[]};" +
-                "const req='harinText'+Math.random().toString(36).slice(2);" +
-                "const u='/api/generate?userKey='+encodeURIComponent(key)+'&requestId='+encodeURIComponent(req)+'&__cacheBust='+Math.random();" +
-                "let r=await fetch(u,{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'text/event-stream, application/json, text/plain'},body:JSON.stringify(body)});" +
-                "let raw=await r.text();if(!r.ok||raw.includes('invalid_key')){" +
-                "key=await keyFrom(" + ((thread + 1) % 2) + ");if(!key)throw new Error('browser key refresh failed');" +
-                "const u2='/api/generate?userKey='+encodeURIComponent(key)+'&requestId='+encodeURIComponent(req+'r')+'&__cacheBust='+Math.random();" +
-                "r=await fetch(u2,{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'text/event-stream, application/json, text/plain'},body:JSON.stringify(body)});raw=await r.text();}" +
-                "if(!r.ok)throw new Error('HTTP '+r.status+' '+raw.slice(0,180));const out=parse(raw);if(!out.trim())throw new Error('empty text stream');send(out);" +
-                "}catch(e){fail(e&&e.message?e.message:e);}})();";
-        return execute(a, textWeb, id, script, "text", 55000);
+                "try{" +
+                "const fn=(window.root&&typeof root.aiTextPlugin==='function'?root.aiTextPlugin:(typeof window.aiTextPlugin==='function'?window.aiTextPlugin:null));" +
+                "if(!fn)throw new Error('root.aiTextPlugin is not available');" +
+                "const job=fn({instruction:" + JSONObject.quote(prompt) + ",startWith:'',stopSequences:[]});" +
+                "const data=await job;let out='';" +
+                "if(typeof data==='string')out=data;" +
+                "else if(data){out=data.text||data.completion||data.fullText||data.fullTextSoFar||data.output||data.result||'';}" +
+                "if(!out&&job&&typeof job==='object'){out=job.text||job.completion||job.fullText||job.fullTextSoFar||'';}" +
+                "if(!String(out).trim())throw new Error('aiTextPlugin returned no text; keys='+(data&&typeof data==='object'?Object.keys(data).join(',') : typeof data));" +
+                "ok(out);" +
+                "}catch(e){fail(e&&e.stack?e.stack:(e&&e.message?e.message:e));}})();";
+        return execute(a, id, script, "text", 90000);
     }
 
-    private static String runImageOnce(String prompt, String negativePrompt, int seed, int thread) throws Exception {
+    private static String runImageOnce(String prompt, String negativePrompt, int seed) throws Exception {
         Activity a = requireActivity();
-        ensureReady(a, "image", 20000);
         String id = UUID.randomUUID().toString();
-        String p = JSONObject.quote(prompt);
-        String n = JSONObject.quote(negativePrompt);
         String script = "(async()=>{const RID=" + JSONObject.quote(id) + ";" +
-                "const send=(s)=>HarinNative.ok(RID,btoa(unescape(encodeURIComponent(s))));" +
+                "const ok=(s)=>HarinNative.okRaw(RID,String(s));" +
                 "const fail=(s)=>HarinNative.fail(RID,'image',String(s));" +
-                "const verified=async(k)=>{try{const r=await fetch('/api/checkUserVerificationStatus?userKey='+encodeURIComponent(k)+'&__cacheBust='+Math.random(),{credentials:'include',cache:'no-store'});const x=(await r.text()).toLowerCase();return r.ok&&x.includes('verified')&&!x.includes('not_verified')&&!x.includes('invalid');}catch(e){return false;}};" +
-                "const keyFrom=async(t)=>{let k='';try{const r=await fetch('/api/verifyUser?thread='+t+'&__cacheBust='+Math.random(),{credentials:'include',cache:'no-store'});const x=await r.text();try{const j=JSON.parse(x);k=j.userKey||j.key||'';}catch(e){}if(!k){const m=x.match(/\\\"userKey\\\"\\s*:\\s*\\\"([^\\\"]+)/);if(m)k=m[1];}}catch(e){}" +
-                "if(k)return k;const html=document.documentElement?document.documentElement.outerHTML:'';const c=[...new Set(html.match(/[a-f0-9]{64}/gi)||[])];for(const v of c){if(await verified(v))return v;}return '';};" +
-                "try{let key=await keyFrom(" + thread + ");if(!key)throw new Error('image userKey not available in browser session');" +
-                "const make=async(k)=>{const q=new URLSearchParams({prompt:" + p + ",negativePrompt:" + n + ",userKey:k,__cache_bust:String(Math.random()),seed:String(" + seed + "),resolution:'512x768',guidanceScale:'7',channel:'ai-text-to-image-generators',subChannel:'public',requestId:'harinImage'+Math.random().toString(36).slice(2)});" +
-                "const r=await fetch('/api/generate?'+q.toString(),{credentials:'include',cache:'no-store',headers:{'Accept':'application/json, text/plain, */*'}});const x=await r.text();return {r,x};};" +
-                "let z=await make(key);if(!z.r.ok||z.x.includes('invalid_key')){key=await keyFrom(" + ((thread + 1) % 2) + ");if(!key)throw new Error('image browser key refresh failed');z=await make(key);}" +
-                "if(!z.r.ok)throw new Error('HTTP '+z.r.status+' '+z.x.slice(0,180));let obj;try{obj=JSON.parse(z.x);}catch(e){throw new Error('invalid image JSON '+z.x.slice(0,160));}" +
-                "if(obj.status&&obj.status!=='success'&&!obj.imageId)throw new Error(obj.status+': '+(obj.message||obj.error||''));if(!obj.imageId)throw new Error('imageId missing');send(JSON.stringify(obj));" +
-                "}catch(e){fail(e&&e.message?e.message:e);}})();";
-        return execute(a, imageWeb, id, script, "image", 65000);
+                "try{" +
+                "const fn=(window.root&&typeof root.textToImagePlugin==='function'?root.textToImagePlugin:(typeof window.textToImagePlugin==='function'?window.textToImagePlugin:null));" +
+                "if(!fn)throw new Error('root.textToImagePlugin is not available');" +
+                "let job=fn({prompt:" + JSONObject.quote(prompt) + ",negativePrompt:" + JSONObject.quote(negativePrompt) + ",resolution:'512x768',seed:" + seed + ",guidanceScale:7});" +
+                "let data=await Promise.resolve(job);" +
+                "let url='';if(typeof data==='string'&&data.startsWith('data:image/'))url=data;" +
+                "else if(data){url=data.dataUrl||data.dataURL||data.url||((data.output&&data.output.dataUrl)||'');}" +
+                "if(!url&&job&&typeof job==='object'){url=job.dataUrl||job.dataURL||'';}" +
+                "if(!url)throw new Error('textToImagePlugin returned no dataUrl; keys='+(data&&typeof data==='object'?Object.keys(data).join(',') : typeof data));" +
+                "if(!String(url).startsWith('data:image/'))throw new Error('image result is not a data URL: '+String(url).slice(0,80));" +
+                "ok(url);" +
+                "}catch(e){fail(e&&e.stack?e.stack:(e&&e.message?e.message:e));}})();";
+        return execute(a, id, script, "image", 150000);
     }
 
-    private static String execute(Activity a, WebView web, String id, String script, String kind, long timeoutMs) throws Exception {
-        if (web == null) throw new IllegalStateException(kind + " WebView unavailable");
+    private static String execute(Activity a, String id, String script, String kind, long timeoutMs) throws Exception {
+        WebView web = runtimeWeb;
+        if (web == null) throw new IllegalStateException("Perchance generator WebView unavailable");
         Pending p = new Pending();
         PENDING.put(id, p);
         a.runOnUiThread(() -> {
             try { web.evaluateJavascript(script, null); }
             catch (Throwable t) {
                 Pending q = PENDING.get(id);
-                if (q != null) { q.error = t.getClass().getSimpleName() + ": " + t.getMessage(); q.latch.countDown(); }
+                if (q != null) {
+                    q.error = t.getClass().getSimpleName() + ": " + t.getMessage();
+                    q.latch.countDown();
+                }
             }
         });
         boolean done = p.latch.await(timeoutMs, TimeUnit.MILLISECONDS);
         PENDING.remove(id);
-        if (!done) throw new IllegalStateException(kind + " embed watchdog timeout");
+        if (!done) throw new IllegalStateException(kind + " plugin watchdog timeout");
         if (p.error != null && !p.error.isEmpty()) throw new IllegalStateException(p.error);
-        if (p.result == null) throw new IllegalStateException(kind + " embed returned no result");
+        if (p.result == null) throw new IllegalStateException(kind + " plugin returned no result");
         return p.result;
     }
 
-    private static void ensureReady(Activity a, String kind, long timeoutMs) throws Exception {
-        a.runOnUiThread(() -> ensureWebViews(a));
+    private static void ensureReady(Activity a, long timeoutMs) throws Exception {
+        a.runOnUiThread(() -> ensureRuntime(a));
         long end = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < end) {
-            boolean ready = "text".equals(kind) ? textReady : imageReady;
-            if (ready) return;
-            Thread.sleep(80);
+            if (runtimeReady) return;
+            Thread.sleep(100);
         }
-        throw new IllegalStateException(kind + " embed did not finish loading");
+        throw new IllegalStateException("Perchance generator runtime did not expose both plugins: " + lastDiagnostic);
+    }
+
+    private static void restartAndWait() {
+        try {
+            restart();
+            long end = System.currentTimeMillis() + 20000;
+            while (System.currentTimeMillis() < end && !runtimeReady) Thread.sleep(120);
+        } catch (Throwable ignored) {}
     }
 
     private static Activity requireActivity() {
         Activity a = currentActivity.get();
-        if (a == null || a.isFinishing()) throw new IllegalStateException("열려 있는 앱 화면이 없어 브라우저 세션을 사용할 수 없어");
+        if (a == null || a.isFinishing())
+            throw new IllegalStateException("열려 있는 앱 화면이 없어 Perchance 플러그인 런타임을 사용할 수 없어");
         return a;
     }
 
-    private static void ensureWebViews(Activity activity) {
+    private static void ensureRuntime(Activity activity) {
         if (activity == null || activity.isFinishing()) return;
-        if (sessionActivity == activity && textWeb != null && imageWeb != null) return;
-        destroyWebViews();
+        if (sessionActivity == activity && runtimeWeb != null) return;
+        destroyRuntime();
         sessionActivity = activity;
-        textReady = false;
-        imageReady = false;
+        runtimeReady = false;
+        runtimeUrl = "";
+        lastDiagnostic = "AI Character Chat 로딩";
+        final int epoch = ++generationEpoch;
         try {
-            textWeb = createWeb(activity, "text");
-            imageWeb = createWeb(activity, "image");
-            attach(activity, textWeb);
-            attach(activity, imageWeb);
-            textWeb.loadUrl(TEXT_EMBED);
-            imageWeb.loadUrl(IMAGE_EMBED);
+            runtimeWeb = createWeb(activity, epoch);
+            attach(activity, runtimeWeb);
+            runtimeWeb.loadUrl(HOST_PAGE + "?harinRuntime=" + System.currentTimeMillis());
         } catch (Throwable t) {
-            destroyWebViews();
+            lastDiagnostic = "WebView 생성 실패: " + safe(t);
+            destroyRuntime();
         }
     }
 
-    private static WebView createWeb(Activity activity, String kind) {
+    private static WebView createWeb(Activity activity, int epoch) {
         WebView w = new WebView(activity);
         WebSettings s = w.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
-        s.setAllowFileAccess(false);
-        s.setAllowContentAccess(false);
-        s.setJavaScriptCanOpenWindowsAutomatically(false);
-        s.setUserAgentString("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Mobile Safari/537.36");
+        s.setJavaScriptCanOpenWindowsAutomatically(true);
+        // Do not spoof a Chrome version. The real Android WebView UA must match its browser fingerprint.
+        s.setUserAgentString(WebSettings.getDefaultUserAgent(activity));
         android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(w, true);
         w.addJavascriptInterface(new Bridge(), "HarinNative");
+        w.setWebChromeClient(new WebChromeClient());
         w.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if ("text".equals(kind) && url != null && url.startsWith("https://text-generation.perchance.org/")) textReady = true;
-                if ("image".equals(kind) && url != null && url.startsWith("https://image-generation.perchance.org/")) imageReady = true;
+                if (epoch != generationEpoch || view != runtimeWeb) return;
+                if (url == null) return;
+                if (url.startsWith("https://perchance.org/ai-character-chat")) {
+                    lastDiagnostic = "generator iframe 찾는 중";
+                    discoverGeneratorIframe(view, epoch, 0);
+                } else if (url.startsWith("https://") && url.contains(".perchance.org/")) {
+                    runtimeUrl = url;
+                    lastDiagnostic = "imported plugin 확인 중";
+                    probePlugins(view, epoch, 0);
+                }
             }
         });
         w.setClickable(false);
         w.setFocusable(false);
-        w.setAlpha(0.01f);
-        w.setTranslationX(-20f);
-        w.setTranslationY(-20f);
+        w.setAlpha(0.02f);
         return w;
     }
 
-    private static void attach(Activity activity, WebView web) {
-        ViewGroup.LayoutParams p = new ViewGroup.LayoutParams(2, 2);
-        activity.addContentView(web, p);
-    }
-
-    private static void reset(String kind) {
-        Activity a = currentActivity.get();
-        if (a == null || a.isFinishing()) return;
-        a.runOnUiThread(() -> {
-            try {
-                if ("text".equals(kind) && textWeb != null) {
-                    textReady = false;
-                    textWeb.loadUrl(TEXT_EMBED + "?harinReload=" + System.currentTimeMillis());
-                } else if ("image".equals(kind) && imageWeb != null) {
-                    imageReady = false;
-                    imageWeb.loadUrl(IMAGE_EMBED + "?harinReload=" + System.currentTimeMillis());
-                }
-            } catch (Throwable ignored) {}
+    private static void discoverGeneratorIframe(WebView web, int epoch, int attempt) {
+        if (web == null || epoch != generationEpoch || web != runtimeWeb) return;
+        if (attempt > 80) {
+            lastDiagnostic = "AI Character Chat generator iframe을 찾지 못함";
+            return;
+        }
+        String js = "(()=>{const f=document.querySelector('#outputIframeEl')||document.querySelector('iframe[src*=\".perchance.org\"]');return f&&f.src?f.src:'';})()";
+        web.evaluateJavascript(js, value -> {
+            if (epoch != generationEpoch || web != runtimeWeb) return;
+            String src = decodeJsString(value).trim();
+            if (!src.isEmpty() && src.startsWith("https://") && src.contains(".perchance.org/")) {
+                runtimeUrl = src;
+                lastDiagnostic = "generator runtime 이동";
+                web.loadUrl(src);
+            } else {
+                web.postDelayed(() -> discoverGeneratorIframe(web, epoch, attempt + 1), 250);
+            }
         });
     }
 
-    private static void destroyWebViews() {
-        try { if (textWeb != null) { textWeb.stopLoading(); textWeb.removeJavascriptInterface("HarinNative"); textWeb.destroy(); } } catch (Throwable ignored) {}
-        try { if (imageWeb != null) { imageWeb.stopLoading(); imageWeb.removeJavascriptInterface("HarinNative"); imageWeb.destroy(); } } catch (Throwable ignored) {}
-        textWeb = null;
-        imageWeb = null;
-        textReady = false;
-        imageReady = false;
-    }
-
-    private static String decode(String value) {
-        try { return new String(Base64.decode(value, Base64.DEFAULT), StandardCharsets.UTF_8); }
-        catch (Exception e) { return value == null ? "" : value; }
-    }
-
-    private static String safe(Exception e) {
-        if (e == null) return "unknown error";
-        String m = e.getMessage();
-        if (m == null || m.trim().isEmpty()) return e.getClass().getSimpleName();
-        return m.length() > 180 ? m.substring(0, 180) : m;
-    }
-
-    public static final class Bridge {
-        @JavascriptInterface public void ok(String id, String base64) {
-            Pending p = PENDING.get(id);
-            if (p == null) return;
-            p.result = decode(base64);
-            p.latch.countDown();
+    private static void probePlugins(WebView web, int epoch, int attempt) {
+        if (web == null || epoch != generationEpoch || web != runtimeWeb) return;
+        if (attempt > 120) {
+            lastDiagnostic = "generator는 열렸지만 aiTextPlugin/textToImagePlugin import가 준비되지 않음";
+            return;
         }
+        String js = "(()=>{const r=window.root||{};return JSON.stringify({text:typeof r.aiTextPlugin==='function'||typeof window.aiTextPlugin==='function',image:typeof r.textToImagePlugin==='function'||typeof window.textToImagePlugin==='function',root:!!window.root,href:location.href});})()";
+        web.evaluateJavascript(js, value -> {
+            if (epoch != generationEpoch || web != runtimeWeb) return;
+            String raw = decodeJsString(value);
+            try {
+                JSONObject o = new JSONObject(raw);
+                boolean text = o.optBoolean("text", false);
+                boolean image = o.optBoolean("image", false);
+                runtimeUrl = o.optString("href", runtimeUrl);
+                lastDiagnostic = "root=" + o.optBoolean("root", false) + " text=" + text + " image=" + image;
+                if (text && image) {
+                    runtimeReady = true;
+                    return;
+                }
+            } catch (Exception ignored) {
+                lastDiagnostic = "plugin probe 응답 해석 실패: " + raw;
+            }
+            web.postDelayed(() -> probePlugins(web, epoch, attempt + 1), 300);
+        });
+    }
 
-        @JavascriptInterface public void fail(String id, String kind, String message) {
-            Pending p = PENDING.get(id);
-            if (p == null) return;
-            p.error = (kind == null ? "Perchance" : kind) + ": " + (message == null ? "unknown error" : message);
-            p.latch.countDown();
+    private static void attach(Activity activity, WebView web) {
+        // Keep a real attached browser surface. Some verification/browser features behave poorly in a detached WebView.
+        ViewGroup.LayoutParams p = new ViewGroup.LayoutParams(12, 12);
+        activity.addContentView(web, p);
+    }
+
+    private static void destroyRuntime() {
+        runtimeReady = false;
+        runtimeUrl = "";
+        WebView w = runtimeWeb;
+        runtimeWeb = null;
+        if (w != null) {
+            try {
+                w.stopLoading();
+                w.removeJavascriptInterface("HarinNative");
+                ViewGroup parent = (ViewGroup) w.getParent();
+                if (parent != null) parent.removeView(w);
+                w.destroy();
+            } catch (Throwable ignored) {}
         }
+    }
+
+    private static String decodeJsString(String value) {
+        if (value == null || "null".equals(value)) return "";
+        try {
+            Object v = new org.json.JSONTokener(value).nextValue();
+            return v instanceof String ? (String) v : String.valueOf(v);
+        } catch (Exception e) {
+            return value;
+        }
+    }
+
+    private static String safe(Throwable t) {
+        if (t == null) return "unknown";
+        String s = t.getMessage();
+        if (s == null || s.trim().isEmpty()) s = t.getClass().getSimpleName();
+        return s.length() > 350 ? s.substring(0, 350) : s;
     }
 
     private static final class Pending {
         final CountDownLatch latch = new CountDownLatch(1);
         volatile String result;
         volatile String error;
+    }
+
+    public static final class Bridge {
+        @JavascriptInterface public void ok(String id, String base64) {
+            Pending p = PENDING.get(id);
+            if (p == null) return;
+            try {
+                byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+                p.result = new String(bytes, StandardCharsets.UTF_8);
+            } catch (Throwable t) {
+                p.error = "bridge decode failed: " + safe(t);
+            }
+            p.latch.countDown();
+        }
+
+        @JavascriptInterface public void okRaw(String id, String value) {
+            Pending p = PENDING.get(id);
+            if (p == null) return;
+            p.result = value;
+            p.latch.countDown();
+        }
+
+        @JavascriptInterface public void fail(String id, String kind, String message) {
+            Pending p = PENDING.get(id);
+            if (p == null) return;
+            p.error = kind + " plugin: " + message;
+            p.latch.countDown();
+        }
     }
 }
