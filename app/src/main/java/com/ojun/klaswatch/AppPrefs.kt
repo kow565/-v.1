@@ -13,6 +13,7 @@ object AppPrefs {
     private const val INTERVAL = "interval_minutes"
     private const val LAST_STATUS = "last_status"
     private const val LAST_RELAY_STATUS = "last_relay_status"
+    private const val LAST_SCHOLARSHIP_STATUS = "last_scholarship_status"
     private const val AUTO_SEED_URL = "auto_seed_url"
     private const val LAST_DISCOVERY = "last_discovery"
     private const val LAST_KEEP_ALIVE = "last_keep_alive"
@@ -32,6 +33,7 @@ object AppPrefs {
     fun intervalMinutes(context: Context): Long = prefs(context).getLong(INTERVAL, 15L).coerceAtLeast(15L)
     fun lastStatus(context: Context): String = prefs(context).getString(LAST_STATUS, "아직 검사 기록이 없습니다.") ?: ""
     fun lastRelayStatus(context: Context): String = prefs(context).getString(LAST_RELAY_STATUS, "이메일 중계 미설정") ?: ""
+    fun lastScholarshipStatus(context: Context): String = prefs(context).getString(LAST_SCHOLARSHIP_STATUS, "장학금 감시 준비 중") ?: ""
     fun autoSeedUrl(context: Context): String = prefs(context).getString(AUTO_SEED_URL, "") ?: ""
     fun lastDiscovery(context: Context): Long = prefs(context).getLong(LAST_DISCOVERY, 0L)
 
@@ -53,6 +55,10 @@ object AppPrefs {
 
     fun setLastRelayStatus(context: Context, text: String) {
         prefs(context).edit().putString(LAST_RELAY_STATUS, text).apply()
+    }
+
+    fun setScholarshipStatus(context: Context, text: String) {
+        prefs(context).edit().putString(LAST_SCHOLARSHIP_STATUS, text).apply()
     }
 
     fun setAutoSeedUrl(context: Context, url: String) {
@@ -138,4 +144,3 @@ object AppPrefs {
     fun hasBaseline(context: Context, targetId: String): Boolean = prefs(context).getBoolean("baseline_$targetId", false)
     fun setBaseline(context: Context, targetId: String) = prefs(context).edit().putBoolean("baseline_$targetId", true).apply()
 }
-
