@@ -7,15 +7,23 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.ViewGroup;
+import android.webkit.CookieManager;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.io.File;
 
 public class PerchanceConnectActivity extends Activity {
+    private static final String PERCHANCE_PAGE = "https://perchance.org/ai-character-chat";
     private TextView status;
     private TextView detail;
+    private WebView visiblePerchance;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean polling;
 
@@ -38,11 +46,13 @@ public class PerchanceConnectActivity extends Activity {
     }
 
     private void buildUi() {
+        ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(22), dp(30), dp(22), dp(24));
+        root.setPadding(dp(16), dp(22), dp(16), dp(24));
         root.setBackgroundColor(Color.WHITE);
+        scroll.addView(root);
 
         TextView title = new TextView(this);
         title.setText("Perchance 플러그인 진단");
@@ -52,10 +62,10 @@ public class PerchanceConnectActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView info = new TextView(this);
-        info.setText("v0.4부터는 userKey나 내부 /api/generate를 주 경로로 사용하지 않아. Perchance의 실제 AI Character Chat generator runtime을 열고, 그 안에 import된 ai-text-plugin과 text-to-image-plugin 함수를 그대로 호출해. 아래 테스트는 그 플러그인 자체를 검사해.");
-        info.setTextSize(14);
+        info.setText("v0.4는 Perchance 내부 API를 주 경로로 사용하지 않고, 실제 AI Character Chat generator 안에 import된 AI Text Plugin과 Text-to-Image Plugin을 호출해. 아래 원본 Perchance 화면은 브라우저 검증이나 쿠키 확인이 필요한 경우 직접 완료할 수 있게 보여주는 정상 브라우저 화면이야.");
+        info.setTextSize(13);
         info.setTextColor(Color.DKGRAY);
-        info.setPadding(0, dp(14), 0, dp(18));
+        info.setPadding(0, dp(12), 0, dp(12));
         root.addView(info);
 
         status = new TextView(this);
@@ -63,19 +73,51 @@ public class PerchanceConnectActivity extends Activity {
         status.setTextSize(17);
         status.setTextColor(Color.BLACK);
         status.setGravity(Gravity.CENTER_HORIZONTAL);
-        status.setPadding(0, dp(12), 0, dp(8));
+        status.setPadding(0, dp(8), 0, dp(6));
         root.addView(status, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         detail = new TextView(this);
         detail.setText("상태를 읽는 중…");
         detail.setTextSize(12);
         detail.setTextColor(Color.GRAY);
-        detail.setPadding(0, 0, 0, dp(18));
+        detail.setPadding(0, 0, 0, dp(10));
         root.addView(detail);
+
+        TextView browserLabel = new TextView(this);
+        browserLabel.setText("Perchance 원본 브라우저 세션");
+        browserLabel.setTextSize(14);
+        browserLabel.setTextColor(Color.BLACK);
+        browserLabel.setPadding(0, dp(4), 0, dp(5));
+        root.addView(browserLabel);
+
+        visiblePerchance = new WebView(this);
+        WebSettings ws = visiblePerchance.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setJavaScriptCanOpenWindowsAutomatically(true);
+        ws.setUserAgentString(WebSettings.getDefaultUserAgent(this));
+        CookieManager cm = CookieManager.getInstance();
+        cm.setAcceptCookie(true);
+        cm.setAcceptThirdPartyCookies(visiblePerchance, true);
+        visiblePerchance.setWebChromeClient(new WebChromeClient());
+        visiblePerchance.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                detail.setText("원본 Perchance 페이지 로드됨 · 확인/동의/브라우저 검증 화면이 보이면 그대로 완료한 뒤 플러그인 런타임 새로 만들기를 눌러줘.");
+            }
+        });
+        root.addView(visiblePerchance, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(360)));
+        visiblePerchance.loadUrl(PERCHANCE_PAGE + "?harinVisible=" + System.currentTimeMillis());
+
+        Button reloadPage = button("원본 Perchance 다시 불러오기");
+        reloadPage.setOnClickListener(v -> visiblePerchance.loadUrl(PERCHANCE_PAGE + "?harinVisible=" + System.currentTimeMillis()));
+        root.addView(reloadPage, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         Button rebuild = button("플러그인 런타임 새로 만들기");
         rebuild.setOnClickListener(v -> {
-            detail.setText("Perchance generator를 처음부터 다시 여는 중…");
+            CookieManager.getInstance().flush();
+            detail.setText("현재 브라우저 쿠키를 유지한 채 Perchance generator runtime을 처음부터 다시 여는 중…");
             PerchanceBrowserTransport.restart();
         });
         root.addView(rebuild, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -91,11 +133,11 @@ public class PerchanceConnectActivity extends Activity {
         Button done = button("DM으로 돌아가기");
         done.setOnClickListener(v -> finish());
         root.addView(done, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(root);
+        setContentView(scroll);
     }
 
     private void testText() {
-        detail.setText("root.aiTextPlugin에 실제 요청을 보내는 중…");
+        detail.setText("root.aiTextPlugin에 실제 요청을 보내고 스트리밍 결과를 수집하는 중…");
         new Thread(() -> {
             try {
                 String result = PerchanceBrowserTransport.generateText("Reply with exactly: OK");
@@ -126,6 +168,16 @@ public class PerchanceConnectActivity extends Activity {
         if (!polling) return;
         status.setText(PerchanceBrowserTransport.statusSummary());
         handler.postDelayed(this::refreshStatusLoop, 700);
+    }
+
+    @Override protected void onDestroy() {
+        if (visiblePerchance != null) {
+            try {
+                visiblePerchance.stopLoading();
+                visiblePerchance.destroy();
+            } catch (Throwable ignored) {}
+        }
+        super.onDestroy();
     }
 
     private Button button(String text) {
