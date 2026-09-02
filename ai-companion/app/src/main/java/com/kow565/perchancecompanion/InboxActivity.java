@@ -90,22 +90,25 @@ public class InboxActivity extends Activity {
         root.addView(open, matchWrap(dp(28)));
 
         Button battery = new Button(this);
-        battery.setText("백그라운드 유지 설정");
+        battery.setText("배터리 최적화 제외 화면 열기");
         battery.setTextSize(14);
         battery.setAllCaps(false);
         battery.setOnClickListener(v -> {
-            try {
-                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            } catch (Throwable ignored) {
-                startActivity(new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS));
-            }
+            try { startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)); }
+            catch (Throwable ignored) { startActivity(new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)); }
         });
         root.addView(battery, matchWrap(dp(8)));
 
+        Button appSettings = new Button(this);
+        appSettings.setText("Harin 앱 설정 열기");
+        appSettings.setTextSize(14);
+        appSettings.setAllCaps(false);
+        appSettings.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getPackageName()))));
+        root.addView(appSettings, matchWrap(dp(8)));
+
         TextView note = new TextView(this);
-        note.setText("상단 알림이 보이면 Harin 연결 유지 서비스가 실행 중이에요.");
+        note.setText("배터리 화면에서 Harin을 '제한 없음'으로 바꿔 주세요.\n상단 알림을 누르면 언제든 대화를 다시 열 수 있어요.");
         note.setTextSize(12);
         note.setTextColor(Color.GRAY);
         note.setGravity(Gravity.CENTER);
