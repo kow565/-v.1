@@ -79,10 +79,9 @@ public class CompanionJobService extends JobService {
             try {
                 AiEngine.Turn t = engine.chatTurn(store, "", true);
                 store.applyState(t.state);
-                boolean makeImage = t.imageMoment || store.aiTurnsSinceImage() >= store.imageEveryTurns();
                 String image = "";
-                if (makeImage && PerchanceSession.hasImage(this)) {
-                    try { image = engine.generateImage(this, store, t.imagePrompt.isEmpty() ? "a casual selfie sent in a DM" : t.imagePrompt); }
+                if (PerchanceSession.hasImage(this)) {
+                    try { image = engine.generateMessageImage(this, store, "ai", t.reply, t.imagePrompt); }
                     catch (Throwable ignored) {}
                 }
                 store.addMessage("ai", t.reply, image);

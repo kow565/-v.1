@@ -77,6 +77,24 @@ public class AiEngine {
         return PerchanceClient.generateImage(context, prompt, negative, store.anchorSeed(), "generated", store.profileId());
     }
 
+    public String generateMessageImage(Context context, CompanionStore store, String role,
+                                       String message, String sceneHint) throws Exception {
+        String text = message == null ? "" : message.replace('\n', ' ').trim();
+        if (text.length() > 280) text = text.substring(0, 280);
+        String scene;
+        if ("user".equals(role)) {
+            scene = "The companion has just received this private DM: \"" + text +
+                    "\". Show her immediate natural facial expression and believable current activity, " +
+                    "as a candid photo that visually responds to the message.";
+        } else {
+            String hint = sceneHint == null ? "" : sceneHint.trim();
+            scene = hint.isEmpty()
+                    ? "The companion is sending this DM: \"" + text + "\". Show the matching expression, pose and situation."
+                    : hint + ". Her expression and situation match this DM: \"" + text + "\".";
+        }
+        return generateImage(context, store, scene);
+    }
+
     public String generateUtilityText(CompanionStore store, String prompt) throws Exception {
         return PerchanceClient.generateText(store.appContext(), prompt);
     }

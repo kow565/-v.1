@@ -8,6 +8,7 @@ import org.json.JSONObject;
 
 import java.util.Map;
 import java.util.Random;
+import java.util.UUID;
 
 public class CompanionStore {
     private static final String LEGACY_PREFS = "harin_companion_store_v1";
@@ -215,9 +216,15 @@ public class CompanionStore {
     }
 
     public synchronized void addMessage(String role, String text, String imagePath) {
+        addMessageWithId(role, text, imagePath);
+    }
+
+    public synchronized String addMessageWithId(String role, String text, String imagePath) {
         JSONArray arr = messages();
         JSONObject m = new JSONObject();
+        String id = UUID.randomUUID().toString();
         try {
+            m.put("id", id);
             m.put("role", role);
             m.put("text", text == null ? "" : text);
             m.put("image", imagePath == null ? "" : imagePath);
@@ -226,6 +233,22 @@ public class CompanionStore {
             while (arr.length() > 120) arr.remove(0);
             prefs.edit().putString("messages", arr.toString()).apply();
         } catch (Exception ignored) {}
+        return id;
+    }
+
+    public synchronized void setMessageImage(String messageId, String imagePath) {
+        if (messageId == null || messageId.isEmpty() || imagePath == null || imagePath.isEmpty()) return;
+        JSONArray arr = messages();
+        for (int i = arr.length() - 1; i >= 0; i--) {
+            JSONObject m = arr.optJSONObject(i);
+            if (m != null && messageId.equals(m.optString("id"))) {
+                try {
+                    m.put("image", imagePath);
+                    prefs.edit().putString("messages", arr.toString()).apply();
+                } catch (Exception ignored) {}
+                return;
+            }
+        }
     }
 
     public synchronized String recentTranscript(int count) {

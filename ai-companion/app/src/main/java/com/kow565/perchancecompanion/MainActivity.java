@@ -239,7 +239,7 @@ public class MainActivity extends Activity {
         String text = input.getText().toString().trim();
         if (text.isEmpty()) return;
         input.setText("");
-        store.addMessage("user", text, "");
+        String userMessageId = store.addMessageWithId("user", text, "");
         busy = true;
         renderMessages();
 
@@ -248,14 +248,22 @@ public class MainActivity extends Activity {
                 AiEngine engine = new AiEngine();
                 AiEngine.Turn t = engine.chatTurn(store, text, false);
                 store.applyState(t.state);
-                boolean makeImage = t.imageMoment || store.aiTurnsSinceImage() >= 3;
-                String image = "";
-                if (makeImage) {
-                    try { image = engine.generateImage(this, store, t.imagePrompt.isEmpty() ? "a casual selfie in the current situation" : t.imagePrompt); }
-                    catch (Exception ignored) {}
-                }
-                store.addMessage("ai", t.reply, image);
-                store.bumpAiTurn(!image.isEmpty());
+                String aiMessageId = store.addMessageWithId("ai", t.reply, "");
+                runOnUiThread(this::renderAll);
+
+                try {
+                    String userImage = engine.generateMessageImage(this, store, "user", text, "");
+                    store.setMessageImage(userMessageId, userImage);
+                    runOnUiThread(this::renderAll);
+                } catch (Exception ignored) {}
+
+                String aiImage = "";
+                try {
+                    aiImage = engine.generateMessageImage(this, store, "ai", t.reply, t.imagePrompt);
+                    store.setMessageImage(aiMessageId, aiImage);
+                    runOnUiThread(this::renderAll);
+                } catch (Exception ignored) {}
+                store.bumpAiTurn(!aiImage.isEmpty());
             } catch (Exception e) {
                 store.addMessage("ai", "지금 잠깐 연결이 불안한가 봐. 조금 있다가 다시 말 걸어줘 🥲", "");
             }
