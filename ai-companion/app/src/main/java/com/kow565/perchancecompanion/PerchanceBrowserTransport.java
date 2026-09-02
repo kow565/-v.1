@@ -127,15 +127,21 @@ public final class PerchanceBrowserTransport {
                 "try{" +
                 "const fn=(window.root&&typeof root.aiTextPlugin==='function'?root.aiTextPlugin:(typeof window.aiTextPlugin==='function'?window.aiTextPlugin:null));" +
                 "if(!fn)throw new Error('root.aiTextPlugin is not available');" +
-                "const job=fn({instruction:" + JSONObject.quote(prompt) + ",startWith:'',stopSequences:[]});" +
-                "const data=await job;let out='';" +
-                "if(typeof data==='string')out=data;" +
-                "else if(data){out=data.text||data.completion||data.fullText||data.fullTextSoFar||data.output||data.result||'';}" +
+                "let streamed='';let lastFull='';" +
+                "const job=fn({instruction:" + JSONObject.quote(prompt) + ",startWith:'',stopSequences:[],onChunk:(d)=>{" +
+                "try{if(d&&typeof d.fullTextSoFar==='string')lastFull=d.fullTextSoFar;if(d&&typeof d.textChunk==='string'&&!d.isFromStartWith)streamed+=d.textChunk;}catch(_){}}});" +
+                "let data=null;" +
+                "if(job&&job.onFinishPromise&&typeof job.onFinishPromise.then==='function'){data=await job.onFinishPromise;}" +
+                "else if(job&&typeof job.then==='function'){data=await job;}" +
+                "else{data=job;}" +
+                "let out=lastFull||streamed;" +
+                "if(!out&&typeof data==='string')out=data;" +
+                "else if(!out&&data&&typeof data==='object'){out=data.text||data.completion||data.fullText||data.fullTextSoFar||data.output||data.result||'';}" +
                 "if(!out&&job&&typeof job==='object'){out=job.text||job.completion||job.fullText||job.fullTextSoFar||'';}" +
-                "if(!String(out).trim())throw new Error('aiTextPlugin returned no text; keys='+(data&&typeof data==='object'?Object.keys(data).join(',') : typeof data));" +
+                "if(!String(out).trim())throw new Error('aiTextPlugin finished without text; jobKeys='+(job&&typeof job==='object'?Object.keys(job).join(',') : typeof job));" +
                 "ok(out);" +
                 "}catch(e){fail(e&&e.stack?e.stack:(e&&e.message?e.message:e));}})();";
-        return execute(a, id, script, "text", 90000);
+        return execute(a, id, script, "text", 100000);
     }
 
     private static String runImageOnce(String prompt, String negativePrompt, int seed) throws Exception {
@@ -147,16 +153,16 @@ public final class PerchanceBrowserTransport {
                 "try{" +
                 "const fn=(window.root&&typeof root.textToImagePlugin==='function'?root.textToImagePlugin:(typeof window.textToImagePlugin==='function'?window.textToImagePlugin:null));" +
                 "if(!fn)throw new Error('root.textToImagePlugin is not available');" +
-                "let job=fn({prompt:" + JSONObject.quote(prompt) + ",negativePrompt:" + JSONObject.quote(negativePrompt) + ",resolution:'512x768',seed:" + seed + ",guidanceScale:7});" +
-                "let data=await Promise.resolve(job);" +
+                "const job=fn({prompt:" + JSONObject.quote(prompt) + ",negativePrompt:" + JSONObject.quote(negativePrompt) + ",resolution:'512x768',seed:" + seed + ",guidanceScale:7});" +
+                "const data=await Promise.resolve(job);" +
                 "let url='';if(typeof data==='string'&&data.startsWith('data:image/'))url=data;" +
-                "else if(data){url=data.dataUrl||data.dataURL||data.url||((data.output&&data.output.dataUrl)||'');}" +
+                "else if(data&&typeof data==='object'){url=data.dataUrl||data.dataURL||data.url||((data.output&&data.output.dataUrl)||'');}" +
                 "if(!url&&job&&typeof job==='object'){url=job.dataUrl||job.dataURL||'';}" +
                 "if(!url)throw new Error('textToImagePlugin returned no dataUrl; keys='+(data&&typeof data==='object'?Object.keys(data).join(',') : typeof data));" +
                 "if(!String(url).startsWith('data:image/'))throw new Error('image result is not a data URL: '+String(url).slice(0,80));" +
                 "ok(url);" +
                 "}catch(e){fail(e&&e.stack?e.stack:(e&&e.message?e.message:e));}})();";
-        return execute(a, id, script, "image", 150000);
+        return execute(a, id, script, "image", 180000);
     }
 
     private static String execute(Activity a, String id, String script, String kind, long timeoutMs) throws Exception {
@@ -195,7 +201,7 @@ public final class PerchanceBrowserTransport {
     private static void restartAndWait() {
         try {
             restart();
-            long end = System.currentTimeMillis() + 20000;
+            long end = System.currentTimeMillis() + 25000;
             while (System.currentTimeMillis() < end && !runtimeReady) Thread.sleep(120);
         } catch (Throwable ignored) {}
     }
@@ -233,7 +239,6 @@ public final class PerchanceBrowserTransport {
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
-        // Do not spoof a Chrome version. The real Android WebView UA must match its browser fingerprint.
         s.setUserAgentString(WebSettings.getDefaultUserAgent(activity));
         android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -263,7 +268,7 @@ public final class PerchanceBrowserTransport {
 
     private static void discoverGeneratorIframe(WebView web, int epoch, int attempt) {
         if (web == null || epoch != generationEpoch || web != runtimeWeb) return;
-        if (attempt > 80) {
+        if (attempt > 100) {
             lastDiagnostic = "AI Character Chat generator iframe을 찾지 못함";
             return;
         }
@@ -283,7 +288,7 @@ public final class PerchanceBrowserTransport {
 
     private static void probePlugins(WebView web, int epoch, int attempt) {
         if (web == null || epoch != generationEpoch || web != runtimeWeb) return;
-        if (attempt > 120) {
+        if (attempt > 150) {
             lastDiagnostic = "generator는 열렸지만 aiTextPlugin/textToImagePlugin import가 준비되지 않음";
             return;
         }
@@ -309,8 +314,12 @@ public final class PerchanceBrowserTransport {
     }
 
     private static void attach(Activity activity, WebView web) {
-        // Keep a real attached browser surface. Some verification/browser features behave poorly in a detached WebView.
-        ViewGroup.LayoutParams p = new ViewGroup.LayoutParams(12, 12);
+        float density = activity.getResources().getDisplayMetrics().density;
+        int width = Math.max(320, (int) (320 * density));
+        int height = Math.max(480, (int) (480 * density));
+        ViewGroup.LayoutParams p = new ViewGroup.LayoutParams(width, height);
+        web.setTranslationX(-width - 20f);
+        web.setTranslationY(-height - 20f);
         activity.addContentView(web, p);
     }
 
