@@ -12,16 +12,22 @@ import java.util.concurrent.TimeUnit
 object Scheduler {
     private const val UNIQUE = "klas_periodic_monitor"
     private const val KEEP_ALIVE_UNIQUE = "klas_session_keep_alive"
+    private const val SCHOLARSHIP_UNIQUE = "scholarship_monitor"
 
     fun schedule(context: Context) {
         val minutes = AppPrefs.intervalMinutes(context).coerceAtLeast(15L)
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+
         val req = PeriodicWorkRequestBuilder<MonitorWorker>(minutes, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(UNIQUE, ExistingPeriodicWorkPolicy.UPDATE, req)
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            UNIQUE,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            req
+        )
 
-        val keepAlive = PeriodicWorkRequestBuilder<KeepAliveWorker>(75, TimeUnit.MINUTES)
+        val keepAlive = PeriodicWorkRequestBuilder<KeepAliveWorker>(60, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -29,11 +35,22 @@ object Scheduler {
             ExistingPeriodicWorkPolicy.UPDATE,
             keepAlive
         )
+
+        val scholarship = PeriodicWorkRequestBuilder<ScholarshipWorker>(6, TimeUnit.HOURS)
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            SCHOLARSHIP_UNIQUE,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            scholarship
+        )
     }
 
     fun runNow(context: Context) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        WorkManager.getInstance(context).enqueue(OneTimeWorkRequestBuilder<MonitorWorker>().setConstraints(constraints).build())
+        val wm = WorkManager.getInstance(context)
+        wm.enqueue(OneTimeWorkRequestBuilder<MonitorWorker>().setConstraints(constraints).build())
+        wm.enqueue(OneTimeWorkRequestBuilder<KeepAliveWorker>().setConstraints(constraints).build())
+        wm.enqueue(OneTimeWorkRequestBuilder<ScholarshipWorker>().setConstraints(constraints).build())
     }
 }
-
