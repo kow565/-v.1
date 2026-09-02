@@ -12,9 +12,12 @@ function doGet() {
 
 function doPost(e) {
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return json_({ok: false, code: 'missing_body', error: 'POST JSON body is required'});
+    }
     const data = JSON.parse(e.postData.contents || '{}');
     if (!data.token || data.token !== TOKEN) {
-      return json_({ok: false, error: 'unauthorized'});
+      return json_({ok: false, code: 'unauthorized', error: 'Token does not match the deployed Apps Script'});
     }
 
     const category = clean_(data.category || '공지', 30);
@@ -37,9 +40,9 @@ function doPost(e) {
     ].join('\n');
 
     MailApp.sendEmail(RECIPIENT, subject, body, {name: 'KLAS Watch'});
-    return json_({ok: true});
+    return json_({ok: true, message: 'MailApp.sendEmail completed'});
   } catch (err) {
-    return json_({ok: false, error: String(err)});
+    return json_({ok: false, code: 'server_error', error: String(err)});
   }
 }
 
@@ -51,3 +54,4 @@ function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
