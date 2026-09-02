@@ -22,7 +22,6 @@ import androidx.core.app.ActivityCompat
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var status: TextView
-    private lateinit var scholarshipStatus: TextView
     private lateinit var loginHint: TextView
     private lateinit var toggleWeb: Button
     private lateinit var relayStatus: TextView
@@ -51,19 +50,12 @@ class MainActivity : AppCompatActivity() {
         status = TextView(this).apply {
             text = AppPrefs.lastStatus(this@MainActivity)
             textSize = 14f
-            setPadding(0, 10, 0, 4)
+            setPadding(0, 10, 0, 10)
         }
         root.addView(status)
 
-        scholarshipStatus = TextView(this).apply {
-            text = AppPrefs.lastScholarshipStatus(this@MainActivity)
-            textSize = 13f
-            setPadding(0, 2, 0, 8)
-        }
-        root.addView(scholarshipStatus)
-
         loginHint = TextView(this).apply {
-            text = "아래 큰 화면에서 KLAS에 한 번만 로그인하세요. 로그인되면 과목별 설정 없이 공지·과제·시험·강의자료를 자동 추적합니다. 장학금 공고는 KLAS 로그인과 별개로 앱이 자동 확인합니다."
+            text = "아래 큰 화면에서 KLAS에 한 번만 로그인하세요. 로그인되면 과목별 설정 없이 공지·과제·시험·강의자료를 자동 추적합니다."
             textSize = 14f
             setPadding(0, 4, 0, 10)
         }
@@ -121,7 +113,7 @@ class MainActivity : AppCompatActivity() {
                 AppPrefs.requestRediscovery(this@MainActivity)
                 Scheduler.schedule(this@MainActivity)
                 Scheduler.runNow(this@MainActivity)
-                toast("KLAS + 세션 유지 + 장학금 검사를 시작했습니다.")
+                toast("자동 탐색 + 검사를 시작했습니다.")
             }
         }
         controls.addView(scan, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -129,11 +121,7 @@ class MainActivity : AppCompatActivity() {
 
         val refresh = Button(this).apply {
             text = "상태 새로고침"
-            setOnClickListener {
-                status.text = AppPrefs.lastStatus(this@MainActivity)
-                scholarshipStatus.text = AppPrefs.lastScholarshipStatus(this@MainActivity)
-                relayStatus.text = AppPrefs.lastRelayStatus(this@MainActivity)
-            }
+            setOnClickListener { status.text = AppPrefs.lastStatus(this@MainActivity) }
         }
         root.addView(refresh)
 
@@ -157,7 +145,7 @@ class MainActivity : AppCompatActivity() {
         relayPanel.addView(relayStatus)
 
         relayPanel.addView(TextView(this).apply {
-            text = "Google Apps Script 웹앱 주소를 한 번만 붙여넣으면 이후 새 KLAS 항목과 새 장학금 공고를 Gmail로 자동 중계합니다."
+            text = "Google Apps Script 웹앱 주소를 한 번만 붙여넣으면 이후 새 KLAS 항목을 Gmail로 자동 중계합니다."
             textSize = 12f
         })
 
@@ -221,21 +209,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "앱 내부에서 KLAS는 약 1시간마다 세션 유지 요청을 보내고, 장학금 공식 공고는 약 6시간마다 확인합니다. Android 절전 정책 때문에 실제 실행 시각은 조금 늦어질 수 있습니다. 앱을 강제 종료(Force stop)하면 다시 열기 전까지 중단될 수 있습니다."
+            text = "로그인 후에는 앱을 닫아도 Android가 허용하는 시점에 백그라운드 검사합니다. 앱을 강제 종료(Force stop)하면 다시 열기 전까지 중단될 수 있습니다."
             textSize = 12f
             setPadding(0, 8, 0, 4)
         })
 
-        Scheduler.schedule(this)
-
         val seed = AppPrefs.autoSeedUrl(this)
         if (seed.isBlank()) {
             webView.loadUrl("https://klas.kw.ac.kr/usr/cmn/login/LoginForm.do")
-            Scheduler.runNow(this)
         } else {
             loginDetected = true
-            loginHint.text = "이전에 로그인한 KLAS 세션을 사용합니다. 앱이 세션을 유지하면서 공지·과제·시험·강의 관련 페이지와 장학금 공고를 자동 확인합니다."
+            loginHint.text = "이전에 로그인한 KLAS 세션을 사용합니다. 자동으로 공지·과제·시험·강의 관련 페이지를 탐색합니다."
             webView.loadUrl(seed)
+            Scheduler.schedule(this)
             Scheduler.runNow(this)
         }
     }
@@ -248,7 +234,7 @@ class MainActivity : AppCompatActivity() {
         AppPrefs.requestRediscovery(this)
         AppPrefs.setLastStatus(this, "KLAS 로그인 확인됨 · 자동 감시 페이지 탐색 중…")
         status.text = AppPrefs.lastStatus(this)
-        loginHint.text = "로그인 완료. 과목별 공지 화면을 직접 등록할 필요 없이 앱이 자동 추적합니다."
+        loginHint.text = "로그인 완료. 이제 과목별 공지 화면을 직접 등록할 필요 없습니다."
         Scheduler.schedule(this)
         Scheduler.runNow(this)
 
@@ -267,3 +253,4 @@ class MainActivity : AppCompatActivity() {
         else super.onBackPressed()
     }
 }
+
