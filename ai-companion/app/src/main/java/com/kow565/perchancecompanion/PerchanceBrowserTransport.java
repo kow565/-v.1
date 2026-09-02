@@ -5,6 +5,7 @@ import android.os.Looper;
 import android.util.Base64;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -225,6 +226,33 @@ public final class PerchanceBrowserTransport {
         w.addJavascriptInterface(new Bridge(), "HarinNative");
         w.setWebChromeClient(new WebChromeClient());
         w.setWebViewClient(new WebViewClient() {
+            private boolean keepGeneratorRuntime(String targetUrl) {
+                return targetUrl != null
+                        && targetUrl.startsWith(HOST_PAGE)
+                        && runtimeUrl != null
+                        && runtimeUrl.startsWith("https://")
+                        && runtimeUrl.contains(".perchance.org/");
+            }
+
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String targetUrl = request == null || request.getUrl() == null
+                        ? "" : request.getUrl().toString();
+                if (keepGeneratorRuntime(targetUrl)) {
+                    lastDiagnostic = "generator runtime redirect 차단";
+                    return true;
+                }
+                return false;
+            }
+
+            @SuppressWarnings("deprecation")
+            @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (keepGeneratorRuntime(url)) {
+                    lastDiagnostic = "generator runtime redirect 차단";
+                    return true;
+                }
+                return false;
+            }
+
             @Override public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (epoch != generationEpoch || view != runtimeWeb) return;
