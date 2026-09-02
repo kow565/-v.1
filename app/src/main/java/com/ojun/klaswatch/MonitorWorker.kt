@@ -94,15 +94,25 @@ class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWo
     }
 
     private fun fetch(url: String): Connection.Response {
-        val cookie = CookieManager.getInstance().getCookie(url).orEmpty()
-        return Jsoup.connect(url)
-            .userAgent("Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36")
+        val cookieManager = CookieManager.getInstance()
+        val cookie = cookieManager.getCookie(url).orEmpty()
+        val response = Jsoup.connect(url)
+            .userAgent("Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36 KLASWatch/0.5")
             .header("Accept-Language", "ko-KR,ko;q=0.9,en;q=0.7")
             .apply { if (cookie.isNotBlank()) header("Cookie", cookie) }
             .followRedirects(true)
             .ignoreContentType(true)
             .timeout(20000)
             .execute()
+
+        if (response.cookies().isNotEmpty()) {
+            val finalUrl = response.url().toString()
+            response.cookies().forEach { (name, value) ->
+                cookieManager.setCookie(finalUrl, "$name=$value; Path=/; Secure")
+            }
+            cookieManager.flush()
+        }
+        return response
     }
 
     private fun looksLoggedOut(url: String, html: String): Boolean {
