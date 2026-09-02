@@ -40,6 +40,7 @@ public class MainActivity extends Activity {
     private TextView title;
     private TextView headerAvatar;
     private volatile boolean busy = false;
+    private volatile long chatTurnSerial = 0L;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -286,12 +287,14 @@ public class MainActivity extends Activity {
         String userMessageId = store.addMessageWithId("user", text, "");
         store.setMessageImageStatus(userMessageId, "사진 대기 중…");
         busy = true;
+        final long turnSerial = ++chatTurnSerial;
         renderMessages();
 
-        new Thread(() -> {
+        Thread chatWorker = new Thread(() -> {
             try {
                 AiEngine engine = new AiEngine();
                 AiEngine.Turn t = engine.chatTurn(store, text, false);
+                if (turnSerial != chatTurnSerial) return;
                 store.applyState(t.state);
                 String aiMessageId = store.addMessageWithId("ai", t.reply, "");
                 store.setMessageImageStatus(aiMessageId, "사진 대기 중…");
@@ -300,11 +303,21 @@ public class MainActivity extends Activity {
                 queueMessageImage(userMessageId, "user", text, "", false);
                 queueMessageImage(aiMessageId, "ai", t.reply, t.imagePrompt, true);
             } catch (Exception e) {
+                if (turnSerial != chatTurnSerial) return;
                 store.addMessage("ai", "지금 잠깐 연결이 불안한가 봐. 조금 있다가 다시 말 걸어줘 🥲", "");
                 busy = false;
                 runOnUiThread(this::renderAll);
             }
-        }).start();
+        }, "harin-chat-turn-" + turnSerial);
+        chatWorker.start();
+        chatContainer.postDelayed(() -> {
+            if (turnSerial != chatTurnSerial || !busy) return;
+            chatTurnSerial++;
+            busy = false;
+            chatWorker.interrupt();
+            store.addMessage("ai", "답변 연결이 60초 동안 멈춰서 요청을 종료했어. 연결 화면에서 텍스트 테스트 후 다시 보내줘.", "");
+            renderAll();
+        }, 60000L);
     }
 
     private void queueMessageImage(String messageId, String role, String text, String hint, boolean countAiTurn) {

@@ -62,7 +62,7 @@ public class PerchanceConnectActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView info = new TextView(this);
-        info.setText("v0.7.0은 대화 전송과 사진 생성을 분리하고, Perchance 요청은 하나씩 안전하게 처리해. 준비 상태와 실제 WebView를 함께 확인하며 userKey나 내부 /api/generate 대신 공식 플러그인 bridge를 사용해.");
+        info.setText("v0.7.1은 대화 전송과 사진 생성을 분리하고, 멈춘 텍스트 요청을 60초 후 안전하게 종료해. Perchance 요청은 하나씩 처리하며 userKey나 내부 /api/generate 대신 공식 플러그인 bridge를 사용해.");
         info.setTextSize(13);
         info.setTextColor(Color.DKGRAY);
         info.setPadding(0, dp(12), 0, dp(12));

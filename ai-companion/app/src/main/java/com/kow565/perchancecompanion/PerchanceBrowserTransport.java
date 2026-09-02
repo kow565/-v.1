@@ -102,6 +102,7 @@ public final class PerchanceBrowserTransport {
                     ensureReady(45000);
                     return runTextOnce(prompt == null ? "" : prompt);
                 } catch (Exception e) {
+                    if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) throw e;
                     last = e;
                     restartAndWait();
                 }
@@ -121,6 +122,7 @@ public final class PerchanceBrowserTransport {
                     return runImageOnce(prompt == null ? "" : prompt,
                             negativePrompt == null ? "" : negativePrompt, seed);
                 } catch (Exception e) {
+                    if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) throw e;
                     last = e;
                     restartAndWait();
                 }
