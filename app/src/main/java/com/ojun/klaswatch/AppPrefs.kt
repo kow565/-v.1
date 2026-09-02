@@ -15,6 +15,7 @@ object AppPrefs {
     private const val LAST_RELAY_STATUS = "last_relay_status"
     private const val AUTO_SEED_URL = "auto_seed_url"
     private const val LAST_DISCOVERY = "last_discovery"
+    private const val LAST_KEEP_ALIVE = "last_keep_alive"
     private const val DEFAULT_RELAY_TOKEN = "a5a7pKzeZnUnxC5P-UlMYJOLbNZfbjXR4ppviwgU59s"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -29,6 +30,10 @@ object AppPrefs {
     fun lastRelayStatus(context: Context): String = prefs(context).getString(LAST_RELAY_STATUS, "이메일 중계 미설정") ?: ""
     fun autoSeedUrl(context: Context): String = prefs(context).getString(AUTO_SEED_URL, "") ?: ""
     fun lastDiscovery(context: Context): Long = prefs(context).getLong(LAST_DISCOVERY, 0L)
+
+    fun markKeepAlive(context: Context) {
+        prefs(context).edit().putLong(LAST_KEEP_ALIVE, System.currentTimeMillis()).apply()
+    }
 
     fun saveSettings(context: Context, webhook: String, token: String, interval: Long) {
         prefs(context).edit()
@@ -129,3 +134,4 @@ object AppPrefs {
     fun hasBaseline(context: Context, targetId: String): Boolean = prefs(context).getBoolean("baseline_$targetId", false)
     fun setBaseline(context: Context, targetId: String) = prefs(context).edit().putBoolean("baseline_$targetId", true).apply()
 }
+
