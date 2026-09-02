@@ -7,7 +7,6 @@ import android.os.Looper;
 import android.util.Base64;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -132,10 +131,9 @@ public final class PerchanceBrowserTransport {
         String id = UUID.randomUUID().toString();
         JSONObject request = new JSONObject();
         request.put("id", id);
+        request.put("kind", "text");
         request.put("prompt", prompt);
-        String script = "(()=>{const b=document.querySelector('#harinTextBridgeButton');" +
-                "if(!b){HarinNative.fail(" + JSONObject.quote(id) + ",'text','bridge button missing');return;}" +
-                "b.dataset.request=encodeURIComponent(" + JSONObject.quote(request.toString()) + ");b.click();})()";
+        String script = iframeRequestScript(request);
         return execute(id, script, "text", 100000);
     }
 
@@ -143,13 +141,22 @@ public final class PerchanceBrowserTransport {
         String id = UUID.randomUUID().toString();
         JSONObject request = new JSONObject();
         request.put("id", id);
+        request.put("kind", "image");
         request.put("prompt", prompt);
         request.put("negativePrompt", negativePrompt);
         request.put("seed", seed);
-        String script = "(()=>{const b=document.querySelector('#harinImageBridgeButton');" +
-                "if(!b){HarinNative.fail(" + JSONObject.quote(id) + ",'image','bridge button missing');return;}" +
-                "b.dataset.request=encodeURIComponent(" + JSONObject.quote(request.toString()) + ");b.click();})()";
+        String script = iframeRequestScript(request);
         return execute(id, script, "image", 180000);
+    }
+
+    private static String iframeRequestScript(JSONObject request) {
+        String id = request.optString("id", "");
+        String kind = request.optString("kind", "unknown");
+        String raw = request.toString();
+        return "(()=>{const f=document.querySelector('#outputIframeEl')||document.querySelector('iframe[src*=\".perchance.org\"]');" +
+                "if(!f||!f.src){HarinNative.fail(" + JSONObject.quote(id) + "," + JSONObject.quote(kind) + ",'generator iframe missing');return;}" +
+                "const u=new URL(f.src,location.href);u.searchParams.set('harinRequest'," + JSONObject.quote(id) + ");" +
+                "u.hash='harin='+encodeURIComponent(" + JSONObject.quote(raw) + ");f.src=u.toString();})()";
     }
 
     private static String execute(String id, String script, String kind, long timeoutMs) throws Exception {
@@ -250,33 +257,6 @@ public final class PerchanceBrowserTransport {
         w.addJavascriptInterface(new Bridge(), "HarinNative");
         w.setWebChromeClient(new WebChromeClient());
         w.setWebViewClient(new WebViewClient() {
-            private boolean keepGeneratorRuntime(String targetUrl) {
-                return targetUrl != null
-                        && targetUrl.startsWith(HOST_PAGE)
-                        && runtimeUrl != null
-                        && runtimeUrl.startsWith("https://")
-                        && runtimeUrl.contains(".perchance.org/");
-            }
-
-            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String targetUrl = request == null || request.getUrl() == null
-                        ? "" : request.getUrl().toString();
-                if (keepGeneratorRuntime(targetUrl)) {
-                    lastDiagnostic = "generator runtime redirect 차단";
-                    return true;
-                }
-                return false;
-            }
-
-            @SuppressWarnings("deprecation")
-            @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                if (keepGeneratorRuntime(url)) {
-                    lastDiagnostic = "generator runtime redirect 차단";
-                    return true;
-                }
-                return false;
-            }
-
             @Override public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (epoch != generationEpoch || view != runtimeWeb) return;
@@ -284,10 +264,6 @@ public final class PerchanceBrowserTransport {
                 if (url.startsWith(HOST_PAGE)) {
                     lastDiagnostic = "generator iframe 찾는 중";
                     discoverGeneratorIframe(view, epoch, 0);
-                } else if (url.startsWith("https://") && url.contains(".perchance.org/")) {
-                    runtimeUrl = url;
-                    lastDiagnostic = "imported plugin 확인 중";
-                    probePlugins(view, epoch, 0);
                 }
             }
         });
@@ -328,38 +304,18 @@ public final class PerchanceBrowserTransport {
             String src = decodeJsString(value).trim();
             if (!src.isEmpty() && src.startsWith("https://") && src.contains(".perchance.org/")) {
                 runtimeUrl = src;
-                lastDiagnostic = "generator runtime 이동";
-                web.loadUrl(src);
+                lastDiagnostic = "정상 iframe 안에서 plugin 확인 중";
+                JSONObject probe = new JSONObject();
+                try {
+                    probe.put("id", "probe-" + epoch + "-" + System.currentTimeMillis());
+                    probe.put("kind", "probe");
+                    web.evaluateJavascript(iframeRequestScript(probe), null);
+                } catch (Exception e) {
+                    lastDiagnostic = "iframe probe 생성 실패: " + safe(e);
+                }
             } else {
                 web.postDelayed(() -> discoverGeneratorIframe(web, epoch, attempt + 1), 250);
             }
-        });
-    }
-
-    private static void probePlugins(WebView web, int epoch, int attempt) {
-        if (web == null || epoch != generationEpoch || web != runtimeWeb) return;
-        if (attempt > 150) {
-            lastDiagnostic = "generator는 열렸지만 bridge 버튼이 준비되지 않음";
-            return;
-        }
-        String js = "(()=>{const t=document.querySelector('#harinTextBridgeButton');const i=document.querySelector('#harinImageBridgeButton');return JSON.stringify({text:!!t,image:!!i,bridge:!!t&&!!i,version:'1',href:location.href});})()";
-        web.evaluateJavascript(js, value -> {
-            if (epoch != generationEpoch || web != runtimeWeb) return;
-            String raw = decodeJsString(value);
-            try {
-                JSONObject o = new JSONObject(raw);
-                boolean text = o.optBoolean("text", false);
-                boolean image = o.optBoolean("image", false);
-                runtimeUrl = o.optString("href", runtimeUrl);
-                lastDiagnostic = "bridge=" + o.optBoolean("bridge", false) + " v=" + o.optString("version", "?") + " text=" + text + " image=" + image;
-                if (text && image) {
-                    runtimeReady = true;
-                    return;
-                }
-            } catch (Exception ignored) {
-                lastDiagnostic = "plugin probe 응답 해석 실패: " + raw;
-            }
-            web.postDelayed(() -> probePlugins(web, epoch, attempt + 1), 300);
         });
     }
 
@@ -414,6 +370,11 @@ public final class PerchanceBrowserTransport {
     }
 
     public static final class Bridge {
+        @JavascriptInterface public void ready(String version) {
+            runtimeReady = true;
+            lastDiagnostic = "공식 plugin iframe 준비 ✓ · " + (version == null ? "v?" : version);
+        }
+
         @JavascriptInterface public void ok(String id, String base64) {
             Pending p = PENDING.get(id);
             if (p == null) return;

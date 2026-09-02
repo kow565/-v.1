@@ -20,7 +20,7 @@ import android.widget.TextView;
 import java.io.File;
 
 public class PerchanceConnectActivity extends Activity {
-    private static final String PERCHANCE_PAGE = "https://perchance.org/ai-character-chat";
+    private static final String PERCHANCE_PAGE = "https://perchance.org/87fjsh5tkf";
     private TextView status;
     private TextView detail;
     private WebView visiblePerchance;
@@ -62,7 +62,7 @@ public class PerchanceConnectActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView info = new TextView(this);
-        info.setText("v0.6.0은 연결 화면과 생성 화면을 모두 Android Chrome 형식으로 열어. userKey나 내부 /api/generate 대신 Harin 전용 bridge가 공식 AI Text Plugin과 Text-to-Image Plugin을 import해. 아래 원본 화면에서 브라우저 검증이 나오면 직접 완료해 줘.");
+        info.setText("v0.6.1은 Perchance 생성기를 정상 iframe 안에서 실행해. userKey나 내부 /api/generate 대신 Harin 전용 bridge가 공식 AI Text Plugin과 Text-to-Image Plugin을 import해. 아래 브리지 화면에서 브라우저 검증이 나오면 직접 완료해 줘.");
         info.setTextSize(13);
         info.setTextColor(Color.DKGRAY);
         info.setPadding(0, dp(12), 0, dp(12));
@@ -84,7 +84,7 @@ public class PerchanceConnectActivity extends Activity {
         root.addView(detail);
 
         TextView browserLabel = new TextView(this);
-        browserLabel.setText("Perchance 원본 브라우저 세션");
+        browserLabel.setText("Harin 공식 Perchance iframe 브리지");
         browserLabel.setTextSize(14);
         browserLabel.setTextColor(Color.BLACK);
         browserLabel.setPadding(0, dp(4), 0, dp(5));
