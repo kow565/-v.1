@@ -23,9 +23,14 @@ class ScholarshipWorker(appContext: Context, params: WorkerParameters) :
             "https://www.kw.ac.kr/ko/life/notice.jsp?BoardMode=list&srCategoryId=4&tpage=1"
         ),
         Source(
+            "electric",
+            "전기공학과 공지",
+            "https://electric.kw.ac.kr/community/s_notice.php"
+        ),
+        Source(
             "kosaf",
-            "한국장학재단",
-            "https://www.kosaf.go.kr/ko/main.do"
+            "한국장학재단 공지",
+            "https://www.kosaf.go.kr/ko/notice.do?pg=PTHONotice_list"
         )
     )
 
@@ -63,7 +68,7 @@ class ScholarshipWorker(appContext: Context, params: WorkerParameters) :
                         )
                     }
                     .distinctBy { it.url + "|" + it.title }
-                    .take(80)
+                    .take(100)
 
                 if (items.isEmpty()) {
                     errors += "${source.name}: 공고 0개"
@@ -86,6 +91,8 @@ class ScholarshipWorker(appContext: Context, params: WorkerParameters) :
                     val detail = runCatching {
                         Jsoup.connect(item.url)
                             .userAgent("Mozilla/5.0 (Linux; Android 16) KLASWatch/0.5")
+                            .header("Accept-Language", "ko-KR,ko;q=0.9,en;q=0.7")
+                            .followRedirects(true)
                             .timeout(15_000)
                             .get()
                             .text()
@@ -114,7 +121,7 @@ class ScholarshipWorker(appContext: Context, params: WorkerParameters) :
         val now = SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date())
         val text = buildString {
             append("$now 장학금 검사 · 정상 $okCount/${sources.size} · 새 공고 ${newCount}건")
-            if (errors.isNotEmpty()) append(" · " + errors.take(2).joinToString(" / "))
+            if (errors.isNotEmpty()) append(" · " + errors.take(3).joinToString(" / "))
         }
         AppPrefs.setScholarshipStatus(applicationContext, text)
 
@@ -126,11 +133,12 @@ class ScholarshipWorker(appContext: Context, params: WorkerParameters) :
         val t = title.lowercase()
         val include = listOf(
             "장학", "장학생", "국가근로", "근로장학", "주거안정",
-            "희망사다리", "푸른등대", "학자금", "생활비", "재단"
+            "희망사다리", "푸른등대", "학자금", "생활비", "재단",
+            "학업장려", "등록금 지원", "이자지원"
         )
         val exclude = listOf(
-            "지급 예정", "지급(예정)", "지급 안내", "선발결과", "등록금 납부",
-            "등록금 고지", "대출 상환", "부정수급"
+            "지급 예정", "지급(예정)", "지급 안내", "선발결과", "선정 결과",
+            "등록금 납부", "등록금 고지", "대출 상환", "부정수급"
         )
         return include.any { t.contains(it) } && exclude.none { t.contains(it) }
     }
