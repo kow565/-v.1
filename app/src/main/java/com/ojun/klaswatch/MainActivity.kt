@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         root.addView(TextView(this).apply {
-            text = "KLAS Watch · 자동 추적 v0.3"
+            text = "KLAS Watch · 자동 추적 v0.4"
             textSize = 24f
             setTextColor(Color.BLACK)
         })
@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
             settings.useWideViewPort = false
             settings.builtInZoomControls = true
             settings.displayZoomControls = false
-            settings.userAgentString = settings.userAgentString + " KLASWatch/0.3"
+            settings.userAgentString = settings.userAgentString + " KLASWatch/0.4"
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
@@ -185,7 +185,11 @@ class MainActivity : AppCompatActivity() {
                 isEnabled = false
                 Thread {
                     val result = RelayClient.sendTest(url, AppPrefs.token(this@MainActivity))
-                    val text = if (result.ok) "이메일 중계 정상 · 테스트 메일 전송 성공" else "이메일 중계 실패 · ${result.message}"
+                    val text = if (result.ok) {
+                        "이메일 중계 정상 · ${result.displayMessage()}"
+                    } else {
+                        "이메일 중계 실패 · ${result.displayMessage()}"
+                    }
                     AppPrefs.setLastRelayStatus(this@MainActivity, text)
                     runOnUiThread {
                         relayStatus.text = text
@@ -225,6 +229,7 @@ class MainActivity : AppCompatActivity() {
     private fun onLoginDetected(url: String) {
         if (loginDetected && AppPrefs.autoSeedUrl(this) == url) return
         loginDetected = true
+        CookieManager.getInstance().flush()
         AppPrefs.setAutoSeedUrl(this, url)
         AppPrefs.requestRediscovery(this)
         AppPrefs.setLastStatus(this, "KLAS 로그인 확인됨 · 자동 감시 페이지 탐색 중…")
@@ -248,3 +253,4 @@ class MainActivity : AppCompatActivity() {
         else super.onBackPressed()
     }
 }
+
