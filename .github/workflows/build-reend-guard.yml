@@ -33,13 +33,14 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-37' 'build-tools;37.0.0'
+        run: yes | sdkmanager 'platforms;android-36'
 
       - name: Unpack REEND Guard source
         run: |
           rm -rf reend-guard
           mkdir -p reend-guard
           unzip -q reend-guard-source.zip -d reend-guard
+          sed -i 's/compileSdk = 37/compileSdk = 36/' reend-guard/app/build.gradle.kts
 
       - name: Prepare stable signing key
         run: |
