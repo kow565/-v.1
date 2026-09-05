@@ -42,7 +42,7 @@ jobs:
           cat reend-guard-source.b64.part* | base64 -d > reend-guard-source.zip
           unzip -q reend-guard-source.zip -d reend-guard
 
-      - name: Apply emergency-stop safety patch
+      - name: Apply release safety patches
         working-directory: reend-guard
         run: |
           python3 - <<'PY'
@@ -61,13 +61,62 @@ jobs:
                   removeRecorderOverlay();
           """
           if old not in text:
-              raise SystemExit("Safety patch target not found")
+              raise SystemExit("Emergency-stop patch target not found")
           service.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          blocker = Path("app/src/main/java/com/ojun/reendguard/NotificationBlockerService.java")
+          text = blocker.read_text(encoding="utf-8")
+          old_posted = """        if (getPackageName().equals(notification.getPackageName())) {
+                      return;
+                  }
+          """
+          new_posted = """        if (getPackageName().equals(notification.getPackageName())
+                          || isSafetySystemNotification(notification)) {
+                      return;
+                  }
+          """
+          if old_posted not in text:
+              raise SystemExit("Notification-posted patch target not found")
+          text = text.replace(old_posted, new_posted, 1)
+
+          old_active = """                        && !getPackageName().equals(notification.getPackageName())) {
+          """
+          new_active = """                        && !getPackageName().equals(notification.getPackageName())
+                                  && !isSafetySystemNotification(notification)) {
+          """
+          if old_active not in text:
+              raise SystemExit("Active-notification patch target not found")
+          text = text.replace(old_active, new_active, 1)
+
+          method = """
+              private static boolean isSafetySystemNotification(StatusBarNotification notification) {
+                  String packageName = notification.getPackageName();
+                  if (packageName == null) {
+                      return false;
+                  }
+                  return packageName.equals("android")
+                          || packageName.equals("com.android.systemui")
+                          || packageName.equals("com.android.cellbroadcastreceiver")
+                          || packageName.equals("com.google.android.cellbroadcastreceiver")
+                          || packageName.equals("com.samsung.android.cellbroadcastreceiver")
+                          || packageName.equals("com.sec.android.app.safetyassurance")
+                          || packageName.equals("com.samsung.android.safetyinformation")
+                          || packageName.equals("com.samsung.android.lool")
+                          || packageName.equals("com.samsung.android.sm");
+              }
+          """
+          if "private static boolean isSafetySystemNotification" in text:
+              raise SystemExit("Safety-system method already exists unexpectedly")
+          class_end = text.rfind("}")
+          if class_end < 0:
+              raise SystemExit("Notification blocker class end not found")
+          text = text[:class_end] + method + text[class_end:]
+          blocker.write_text(text, encoding="utf-8")
 
           gradle = Path("app/build.gradle.kts")
           text = gradle.read_text(encoding="utf-8")
-          text = text.replace("versionCode = 1", "versionCode = 2", 1)
-          text = text.replace('versionName = "1.0.0"', 'versionName = "1.0.1"', 1)
+          text = text.replace("versionCode = 1", "versionCode = 3", 1)
+          text = text.replace('versionName = "1.0.0"', 'versionName = "1.0.2"', 1)
           gradle.write_text(text, encoding="utf-8")
 
           readme = Path("setup/README.txt")
@@ -75,8 +124,18 @@ jobs:
           old_line = "6. 긴급 중지는 화면 오른쪽 위 ‘중지’ 또는 볼륨 내리기 버튼 두 번입니다."
           new_line = old_line + "\n   중지하면 다른 앱 이탈 복귀도 함께 풀리며, 알림 차단은 계속 유지됩니다."
           if old_line not in text:
-              raise SystemExit("README patch target not found")
-          readme.write_text(text.replace(old_line, new_line, 1), encoding="utf-8")
+              raise SystemExit("README stop patch target not found")
+          text = text.replace(old_line, new_line, 1)
+          old_notice = """일반 앱 알림은 보이지 않도록 억제하고 알림창에서도 제거합니다.
+          다만 배터리 위험, 과열, 긴급재난 등 Android가 보호하는 일부 시스템 경고는
+          운영체제가 앱의 삭제를 거부할 수 있습니다.
+          """
+          new_notice = """일반 앱 알림은 보이지 않도록 억제하고 알림창에서도 제거합니다.
+          단, 배터리 위험·과열·긴급재난 같은 안전 시스템 경고는 의도적으로 남깁니다.
+          """
+          if old_notice not in text:
+              raise SystemExit("README safety notice target not found")
+          readme.write_text(text.replace(old_notice, new_notice, 1), encoding="utf-8")
           PY
 
       - name: Prepare stable signing key
