@@ -5,7 +5,7 @@ on:
   push:
     branches: [ reend-zflip5-guard ]
     paths:
-      - 'reend-guard-source.zip'
+      - 'reend-guard-source.b64.part*'
       - '.github/workflows/build-reend-guard.yml'
 
 permissions:
@@ -39,8 +39,8 @@ jobs:
         run: |
           rm -rf reend-guard
           mkdir -p reend-guard
+          cat reend-guard-source.b64.part* | base64 -d > reend-guard-source.zip
           unzip -q reend-guard-source.zip -d reend-guard
-          sed -i 's/compileSdk = 37/compileSdk = 36/' reend-guard/app/build.gradle.kts
 
       - name: Prepare stable signing key
         run: |
