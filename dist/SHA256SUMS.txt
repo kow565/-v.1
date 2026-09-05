@@ -1,2 +1,2 @@
-af860813cae0cf7c97d17e73369a6eefbfe6b0f169c7c57336e29e7ac477d991  dist/ReEND-Guard-ZFlip5.apk
-3190aa145417735368de0837e6e4c53ce5eaf5ea6a1137df1610682280e2207e  dist/REEND-Guard-ZFlip5-Setup.zip
+c29ba86c83f17cdd280b0346d71809ed7ab867d0853b873d2b0484db17bf30ba  dist/ReEND-Guard-ZFlip5.apk
+a4b2ade413e75fed29415598721f90860a01e8020dddfe9799beb9cfc6cbee60  dist/REEND-Guard-ZFlip5-Setup.zip
