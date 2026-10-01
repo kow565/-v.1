@@ -5,12 +5,30 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 def run(*args): subprocess.run([str(x) for x in args],check=True)
 sdk=pathlib.Path(os.environ.get('ANDROID_SDK_ROOT',os.environ.get('ANDROID_HOME',ROOT/'.android-sdk')))
-jars=list((sdk/'platforms').glob('**/android.jar'))
-if not jars: raise SystemExit('Install Android SDK platform 35 and build-tools 35, then set ANDROID_SDK_ROOT.')
-jar=next((p for p in jars if '35' in str(p)),jars[-1])
-tools=next((p.parent for p in (sdk/'build-tools').glob('**/aapt2')),None)
-if tools is None: raise SystemExit('Missing Android build-tools.')
-for name in ['aapt2','d8','zipalign','apksigner']:(tools/name).chmod(0o755)
+def sdk_property(path, name):
+    if not path.exists(): return None
+    for line in path.read_text().splitlines():
+        if line.startswith(name+'='): return line.split('=',1)[1].strip()
+    return None
+jar=sdk/'platforms/android-35/android.jar'
+if not jar.exists():
+    # The verified standalone platform ZIP extracts into android-35-ext15.
+    standalone_platform=sdk/'platforms/android-35-ext15'
+    jar=(standalone_platform/'android.jar'
+         if sdk_property(standalone_platform/'source.properties','AndroidVersion.ApiLevel')=='35' else None)
+if jar is None or not jar.exists():
+    raise SystemExit('Install Android SDK platform 35, then set ANDROID_SDK_ROOT.')
+tools=sdk/'build-tools/35.0.0'
+if not (tools/'aapt2').exists():
+    # Google build-tools_r35_linux.zip extracts into android-15.
+    standalone=sdk/'build-tools/android-15'
+    if (standalone/'aapt2').exists() and sdk_property(standalone/'source.properties','Pkg.Revision')=='35.0.0':
+        tools=standalone
+    else: raise SystemExit('Install Android build-tools 35.0.0.')
+for name in ['aapt2','d8','zipalign','apksigner']:
+    executable=tools/name
+    if not os.access(executable,os.X_OK):
+        executable.chmod(executable.stat().st_mode | 0o111)
 build=ROOT/'build';build.mkdir(exist_ok=True)
 classes=build/'classes';shutil.rmtree(classes,ignore_errors=True);classes.mkdir()
 assets=ROOT/'app/src/main/assets'
