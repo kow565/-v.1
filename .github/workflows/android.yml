@@ -1,0 +1,31 @@
+name: Android APK
+on:
+  push:
+    branches: [chat-rpg]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Game state tests
+        run: npm install --ignore-scripts && npm test
+      - name: Native safety tests
+        run: |
+          mkdir -p build/native-tests
+          javac --release 8 -d build/native-tests app/src/main/java/dev/ojun/chatrpg/ProtocolSafety.java tests/native/ProtocolSafetyTest.java
+          java -cp build/native-tests dev.ojun.chatrpg.ProtocolSafetyTest
+      - run: python3 scripts/build-apk.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChatRPG-v0.1.0-development-apk
+          path: build/ChatRPG-v0.1.0.apk

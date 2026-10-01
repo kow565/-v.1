@@ -1,6 +1,10 @@
-.gradle/
-.idea/
+build/
+.android-sdk/
+.signing/
+.superpowers/
+*.jks
+*.keystore
+node_modules/
 local.properties
-**/build/
-*.iml
-.DS_Store
+__pycache__/
+*.pyc

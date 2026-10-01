@@ -1,0 +1,17 @@
+{
+  "name": "arca-chat-rpg",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development tests for the bundled Android Chat RPG UI",
+  "scripts": {
+    "test": "node --test tests/core.test.js && node tests/ui-dom.cjs",
+    "test:browser": "node tests/ui-smoke.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.1",
+    "playwright": "1.62.1"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
