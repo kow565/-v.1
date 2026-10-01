@@ -4,7 +4,9 @@ Load `core.js` before UI code. It exposes `globalThis.GameCore` and CommonJS `mo
 
 ## Calls
 
-- `newCampaign({name, job, world, worldDescription, mode})`: new validated campaign. `job` is `검사`, `도적`, or `마법사`; `mode` is `demo` or `ai`. Description defaults to empty.
+- `newCampaign({name, characterDescription, world, worldDescription, mode, character?})`: creates a validated campaign. New AI campaigns require the generated `character` profile. Demo campaigns record the free concept and use balanced baseline stats without AI generation. Legacy `job` configs/saves remain supported; role titles are unrestricted text up to 100 characters.
+- `buildCharacterRequest({name,characterDescription,world,worldDescription}, model)`: strict `rpg_character` Responses request for a matching profile and opening scene.
+- `parseCharacterResponse(response)`: validates generated role, bio, abilities, initial stats/items, opening scene and three distinct choices; injects normalized API usage.
 - `validateCampaign(state)`: validates and returns a detached JSON clone. Throws Korean `Error` on invalid input. Unknown fields, including nested metadata, are rejected.
 - `applyTurn(state, action, proposal, roll)`: validates everything before applying to a clone; returns a new campaign. Never mutates input. Caller persists only after successful return.
 - `demoTurn(state, action, roll)`: deterministic authored Korean offline proposal. Demo campaigns only.
@@ -19,7 +21,9 @@ All actions are nonempty strings up to 2000 characters; all rolls are integer 1�
 
 `{version:1,id,name,job,world,worldDescription,mode,level,hp,maxHp,mp,maxMp,xp,gold,inventory,location,quest,companions,summary,messages,rewardIds,turnCount,usage,lastChanges}`
 
-`inventory` entries: `{id,name,qty}`. IDs use ASCII letters, digits, underscore and hyphen; reserved prototype names are rejected. Quantity 1–999; at most 100 entries. Names are display text. `companions` are up to 12 strings. `messages` are `{role:'user'|'assistant',text}`; at most 120. `usage` is `{inputTokens,outputTokens,totalTokens}` and accumulates safe integer usage for applied turns only. `lastChanges` are display strings for roll, stat, inventory, and level changes. The assistant message contains narration, d20, and suggested choices as text; choices are not separately persisted.
+`inventory` entries: `{id,name,qty}`. IDs use ASCII letters, digits, underscore and hyphen; reserved prototype names are rejected. Quantity 1–999; at most 100 entries. Names are display text. `companions` are up to 12 strings. `messages` are `{role:'user'|'assistant',text}`; at most 120. `usage` is `{inputTokens,outputTokens,totalTokens}` and accumulates safe integer usage for accepted character generation and applied turns. `lastChanges` are display strings for roll, stat, inventory, and level changes. The assistant message contains narration, d20, and suggested choices as text; choices are not separately persisted.
+
+Optional fields `characterDescription`, `characterBio` and `abilities` preserve the user concept, generated bio, and ability descriptions. Version 1 saves without them still load. The generated profile has `{job,description,abilities,maxHp,maxMp,gold,inventory,location,quest,narration,choices,summary}`. Initial HP is 1–500, MP 0–500, gold 0–1000, at most 12 item kinds with quantity 1–9, and at most eight abilities. Its opening narration is at most 11000 characters so choices fit the saved message limit; bio remains separate. The UI retains a received profile after storage failure so retry sends no new API request.
 
 ## Proposal
 

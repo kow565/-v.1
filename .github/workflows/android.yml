@@ -24,10 +24,11 @@ jobs:
       - name: Native safety tests
         run: |
           mkdir -p build/native-tests
-          javac --release 8 -d build/native-tests app/src/main/java/dev/ojun/chatrpg/ProtocolSafety.java tests/native/ProtocolSafetyTest.java
+          javac --release 8 -d build/native-tests app/src/main/java/dev/ojun/chatrpg/ProtocolSafety.java app/src/main/java/dev/ojun/chatrpg/InsetsPolicy.java tests/native/ProtocolSafetyTest.java tests/native/InsetsPolicyTest.java
           java -cp build/native-tests dev.ojun.chatrpg.ProtocolSafetyTest
+          java -cp build/native-tests dev.ojun.chatrpg.InsetsPolicyTest
       - run: python3 scripts/build-apk.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ChatRPG-v0.1.0-development-apk
-          path: build/ChatRPG-v0.1.0.apk
+          name: ChatRPG-v0.2.0-development-apk
+          path: build/ChatRPG-v0.2.0.apk

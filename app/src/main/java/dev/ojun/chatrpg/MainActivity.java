@@ -44,17 +44,34 @@ public final class MainActivity extends Activity {
         });
         web.addJavascriptInterface(new Bridge(), "AndroidBridge");
         getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        web.setOnApplyWindowInsetsListener((view, insets) -> {
-            if(android.os.Build.VERSION.SDK_INT >= 30){
-                android.graphics.Insets bars=insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.ime());
-                view.setPadding(bars.left,bars.top,bars.right,bars.bottom);
-            } else {
-                view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
-            }
-            return insets;
-        });
-        setContentView(web);
-        web.requestApplyInsets();
+        // Constrain the WebView's measured viewport; Chromium does not reliably
+        // inset its HTML viewport when padding is placed on WebView itself.
+        android.widget.FrameLayout viewport = new android.widget.FrameLayout(this);
+        viewport.setBackgroundColor(0xff10131b);
+        viewport.addView(web,new android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        if(android.os.Build.VERSION.SDK_INT >= 30){
+            getWindow().setDecorFitsSystemWindows(false);
+            android.view.WindowManager.LayoutParams attributes=getWindow().getAttributes();
+            attributes.layoutInDisplayCutoutMode=android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+            getWindow().setAttributes(attributes);
+            viewport.setOnApplyWindowInsetsListener((view,insets) -> {
+                android.graphics.Insets bars=insets.getInsets(android.view.WindowInsets.Type.systemBars());
+                android.graphics.Insets cutout=insets.getInsets(android.view.WindowInsets.Type.displayCutout());
+                android.graphics.Insets ime=insets.getInsets(android.view.WindowInsets.Type.ime());
+                InsetsPolicy.Edges safe=InsetsPolicy.safePadding(
+                    new InsetsPolicy.Edges(bars.left,bars.top,bars.right,bars.bottom),
+                    new InsetsPolicy.Edges(cutout.left,cutout.top,cutout.right,cutout.bottom),
+                    new InsetsPolicy.Edges(ime.left,ime.top,ime.right,ime.bottom));
+                view.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+                return android.view.WindowInsets.CONSUMED;
+            });
+        } else {
+            // API26-29 decor already reserves bars; adjustResize reserves the IME.
+            getWindow().getDecorView().setSystemUiVisibility(0);
+        }
+        setContentView(viewport);
+        viewport.requestApplyInsets();
         web.loadUrl("file:///android_asset/index.html");
     }
     private final class Bridge {

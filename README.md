@@ -4,16 +4,20 @@
 
 ## 설치와 시작
 
-1. `ChatRPG-v0.1.0.apk`를 Android 8.0 이상 및 최신 Android System WebView를 사용하는 휴대폰에 내려받아 설치합니다. Android가 요청하면 다운로드에 사용한 앱의 외부 앱 설치 권한을 허용합니다.
-2. `새로운 모험 시작` → `연습 모드`를 선택하면 API 키 없이 고정된 작은 판타지 이야기를 플레이할 수 있습니다.
-3. 자유로운 GPT 모험은 설정에서 본인의 OpenAI API 키와 모델을 입력한 뒤 새 `AI 모드` 모험을 만듭니다. 기본 모델 이름은 `gpt-6.1-sol`이며 계정에서 사용할 수 있는 모델로 변경할 수 있습니다.
+1. `ChatRPG-v0.2.0.apk`를 Android 8.0 이상 및 최신 Android System WebView를 사용하는 휴대폰에 내려받아 설치합니다. Android가 요청하면 다운로드에 사용한 앱의 외부 앱 설치 권한을 허용합니다.
+2. `새로운 모험 시작`에서 이름과 캐릭터 설명을 자유롭게 입력합니다. `연습 모드`는 API 키 없이 기본 능력치로 고정된 작은 판타지 이야기를 플레이합니다. 설명은 기록되지만 AI 캐릭터 생성은 하지 않습니다.
+3. 자유로운 GPT 모험은 설정에서 본인의 OpenAI API 키와 모델을 입력한 뒤 새 `AI 모드` 모험을 만듭니다. 모험 시작 시 GPT가 설명에 맞는 캐릭터와 첫 장면을 생성합니다. 캐릭터 생성도 API 사용량에 포함됩니다. 기본 모델 이름은 `gpt-6.1-sol`이며 계정에서 사용할 수 있는 모델로 변경할 수 있습니다.
 
 **API 사용료는 ChatGPT 구독과 별도입니다.** 이 APK는 API 키나 API 이용료를 포함하지 않습니다. 서버 없이 휴대폰에서 OpenAI Responses API에 직접 HTTPS 요청합니다. 키는 Android Keystore로 암호화해 기기에 저장하며, 소스·세이브 내보내기에 포함하지 않습니다.
 
 ## 기능
 
 - 판타지 / 현대 헌터 / 생존 배경 및 사용자 세계관 설명
-- 이름·직업 설정, 자유 행동, AI의 3개 추천 행동
+- 이름과 자유 캐릭터 설명 → GPT가 역할·소개·능력·초기 HP/MP·장비·첫 장면 생성
+- 고정 직업 선택 없이 사용자의 외모·성격·과거·능력·약점 설정 반영
+- 캐릭터 생성 응답 저장 실패 시 추가 API 요청 없이 저장 재시도
+- 상태바·내비게이션 바·화면 노치·키보드를 제외한 WebView 표시 영역
+- 자유 행동과 AI의 3개 추천 행동
 - 체력·마력·골드·경험치·레벨·가방·동료·현재 목표와 서사 요약
 - 기기에서 난수 d20 생성, 상태 변경 제안 검증과 범위 제한
 - 응답 검증·저장 성공 후 턴 반영, 실패 후 입력 유지, 중복 전송 방지
@@ -32,7 +36,7 @@ export ANDROID_SDK_ROOT=/path/to/android-sdk
 python3 scripts/build-apk.py
 ```
 
-출력: `build/ChatRPG-v0.1.0.apk`. 처음 빌드하면 `.signing/debug.jks`에 **개발용** 서명 키를 생성합니다. 같은 설치에 업데이트하려면 동일 키를 유지해야 합니다. 소스 저장소에는 키를 올리지 않습니다. CI의 새 빌드는 별도 개발 서명을 생성하므로 로컬 APK 위에 업데이트되지 않을 수 있습니다. 배포용 서명과 공개 배포 기능은 이 개인용 MVP 범위 밖입니다.
+출력: `build/ChatRPG-v0.2.0.apk`. 처음 빌드하면 `.signing/debug.jks`에 **개발용** 서명 키를 생성합니다. 같은 설치에 업데이트하려면 동일 키를 유지해야 합니다. 소스 저장소에는 키를 올리지 않습니다. CI의 새 빌드는 별도 개발 서명을 생성하므로 로컬 APK 위에 업데이트되지 않을 수 있습니다. 배포용 서명과 공개 배포 기능은 이 개인용 MVP 범위 밖입니다.
 
 GitHub Actions는 `chat-rpg` 브랜치 push 또는 수동 실행 시 네이티브/JS 테스트 후 APK를 빌드하고 artifact로 올립니다.
 
@@ -42,8 +46,9 @@ GitHub Actions는 `chat-rpg` 브랜치 push 또는 수동 실행 시 네이티�
 npm install --ignore-scripts
 npm test
 mkdir -p build/native-tests
-javac --release 8 -d build/native-tests app/src/main/java/dev/ojun/chatrpg/ProtocolSafety.java tests/native/ProtocolSafetyTest.java
+javac --release 8 -d build/native-tests app/src/main/java/dev/ojun/chatrpg/ProtocolSafety.java app/src/main/java/dev/ojun/chatrpg/InsetsPolicy.java tests/native/ProtocolSafetyTest.java tests/native/InsetsPolicyTest.java
 java -cp build/native-tests dev.ojun.chatrpg.ProtocolSafetyTest
+java -cp build/native-tests dev.ojun.chatrpg.InsetsPolicyTest
 ```
 
 `javac` 실행 파일이 없지만 JDK 컴파일러 모듈이 설치되어 있다면 `java com.sun.tools.javac.Main`을 사용할 수 있습니다.
@@ -54,7 +59,9 @@ java -cp build/native-tests dev.ojun.chatrpg.ProtocolSafetyTest
 node tests/ui-smoke.cjs
 ```
 
-실제 API 키가 제공되지 않은 제작 환경에서는 실제 계정의 GPT 생성 결과를 검증하지 않았습니다. Android 기기/에뮬레이터에서 Keystore·파일 선택기 실행은 설치 후 확인이 필요합니다. APK 빌드·서명·정렬 및 게임 상태/오류 처리 테스트를 별도로 검증합니다.
+0.1.0의 기존 모험과 설정은 같은 서명 키의 업데이트 설치로 유지됩니다. 자유 캐릭터 생성은 새 모험부터 적용됩니다.
+
+실제 API 키가 제공되지 않은 제작 환경에서는 실제 계정의 GPT 생성 결과를 검증하지 않았습니다. Android 기기/에뮬레이터에서 시스템 바·키보드 표시, Keystore·파일 선택기 실행은 설치 후 확인이 필요합니다. APK 빌드·서명·정렬 및 게임 상태/오류 처리 테스트를 별도로 검증합니다.
 
 ## 코드 구조와 참고 프로젝트
 

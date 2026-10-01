@@ -8,6 +8,7 @@ const {chromium}=require('playwright');
  await page.getByRole('button',{name:'새로운 모험 시작'}).waitFor({timeout:2500});
  await page.getByRole('button',{name:'새로운 모험 시작'}).click();
  await page.getByLabel('캐릭터 이름').fill('오준');
+ await page.getByLabel('어떤 캐릭터로 살고 싶어?').fill('기억을 수집하는 여행자');
  await page.getByRole('button',{name:'연습 모드',exact:true}).click();
  await page.getByRole('button',{name:'모험 시작',exact:true}).click();
  await page.getByPlaceholder('어떻게 행동할까? 자유롭게 적어봐.').fill('경비와 대화한다');

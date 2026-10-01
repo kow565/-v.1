@@ -46,7 +46,7 @@ key=signing/'debug.jks'
 if not key.exists():
  run('keytool','-genkeypair','-keystore',key,'-storepass','android','-keypass','android','-alias','androiddebugkey','-keyalg','RSA','-keysize','2048','-validity','10000','-dname','CN=Chat RPG Development,O=Personal,C=KR')
 key.chmod(0o600)
-out=build/'ChatRPG-v0.1.0.apk'
+out=build/'ChatRPG-v0.2.0.apk'
 run(tools/'apksigner','sign','--ks',key,'--ks-key-alias','androiddebugkey','--ks-pass','pass:android','--key-pass','pass:android','--out',out,build/'aligned.apk')
 run(tools/'apksigner','verify','--verbose','--print-certs',out)
 run(tools/'zipalign','-c','-p','4',out)
