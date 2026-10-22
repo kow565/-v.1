@@ -17,6 +17,12 @@ DEFAULT_MODEL = "jev-1.13.0"  # pin until manually re-evaluated
 # Conservative defaults for triage, NOT empirically calibrated thresholds.
 EMAIL_MIN_CONFIDENCE = 0.80
 TRADE_MIN_CONFIDENCE = 0.85
+ALLOWED_INDICATORS = {
+    "rsi", "macd", "macd_signal", "ema_fast", "ema_slow", "sma_20",
+    "sma_50", "atr", "volatility_pct", "volume_ratio", "spread_bps",
+    "momentum", "trend_strength", "stoch_k", "stoch_d", "adx",
+    "bb_width", "bb_position",
+}
 
 SECRET_RE = re.compile(
     r"(?i)(?:\b(?:api[_ -]?key|secret|password|token|인증번호|인증코드|otp)\b\s*[:=]?\s*)"
@@ -116,9 +122,9 @@ def trade_review(signal: dict, *, transport=None) -> dict:
     indicators = {}
     if isinstance(raw_indicators, dict):
         for key, val in list(raw_indicators.items())[:25]:
-            if (isinstance(key, str) and re.fullmatch(r"[a-zA-Z0-9_]{1,36}", key)
-                    and isinstance(val, (int, float, str)) and not isinstance(val, bool)):
-                indicators[key] = _clean(val, 80)
+            if (isinstance(key, str) and key in ALLOWED_INDICATORS
+                    and isinstance(val, (int, float)) and not isinstance(val, bool)):
+                indicators[key] = val
     state = {
         "symbol": _clean(signal.get("symbol"), 24),
         "side": _clean(signal.get("side"), 8),
