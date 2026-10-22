@@ -37,7 +37,7 @@ class JevBridgeTests(unittest.TestCase):
                 'signal_risk': {'score': 0.5}}}
         result = trade_review({'symbol': 'BTCUSDT', 'side': 'BUY',
                                'private_key': 'SUPER_SECRET',
-                               'indicators': {'rsi': 42}}, transport=fake)
+                               'indicators': {'rsi': 42, 'api_key': 'SUPER_SECRET'}}, transport=fake)
         self.assertFalse(result['order_authorized'])
         self.assertTrue(result['approval_required'])
         self.assertTrue(result['is_confident_review_candidate'])
